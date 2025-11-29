@@ -1,0 +1,7 @@
+# Notes Sync Configuration
+
+# Your Vercel app URL
+API_URL="https://notes-mpc92dyf9-davidkarlsssons-projects.vercel.app"
+
+# Your AUTH_PASSWORD (same as on Vercel)
+AUTH_PASSWORD="your-password-here"
