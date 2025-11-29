@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { notes, syncLog } from '@/lib/db/schema';
-import { gt, isNull } from 'drizzle-orm';
+import { eq, gt, isNull } from 'drizzle-orm';
 import { createHash } from 'crypto';
 
 function checksum(content: string): string {
@@ -67,7 +67,7 @@ export async function POST(request: NextRequest) {
           await db
             .update(notes)
             .set({ deletedAt: new Date() })
-            .where((table: typeof notes) => table.path === path);
+            .where(eq(notes.path, path));
         } else {
           // Upsert
           await db
