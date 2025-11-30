@@ -25,8 +25,8 @@ export default function LoginPage() {
       });
 
       if (res.ok) {
-        router.push('/');
-        router.refresh();
+        // Use hard navigation to ensure cookie is picked up
+        window.location.href = '/';
       } else {
         setError('Wrong password');
       }

@@ -30,7 +30,7 @@ export async function GET(
   }
 }
 
-export async function PUT(
+async function updateNote(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
@@ -63,6 +63,9 @@ export async function PUT(
     );
   }
 }
+
+export const PUT = updateNote;
+export const PATCH = updateNote;
 
 export async function DELETE(
   request: NextRequest,

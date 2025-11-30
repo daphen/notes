@@ -95,13 +95,42 @@ export async function POST(request: NextRequest) {
       }
 
       const buffer = Buffer.from(base64Data, 'base64');
+
+      // Detect actual image type from magic bytes
+      const getImageType = (buf: Buffer): { mime: string; ext: string } => {
+        if (buf[0] === 0xff && buf[1] === 0xd8 && buf[2] === 0xff) {
+          return { mime: 'image/jpeg', ext: 'jpg' };
+        }
+        if (buf[0] === 0x89 && buf[1] === 0x50 && buf[2] === 0x4e && buf[3] === 0x47) {
+          return { mime: 'image/png', ext: 'png' };
+        }
+        if (buf[0] === 0x47 && buf[1] === 0x49 && buf[2] === 0x46) {
+          return { mime: 'image/gif', ext: 'gif' };
+        }
+        if (buf[0] === 0x52 && buf[1] === 0x49 && buf[2] === 0x46 && buf[3] === 0x46) {
+          return { mime: 'image/webp', ext: 'webp' };
+        }
+        // HEIC/HEIF detection (ftyp box at offset 4)
+        if (buf.length > 12 && buf.slice(4, 8).toString() === 'ftyp') {
+          const brand = buf.slice(8, 12).toString();
+          if (['heic', 'heix', 'hevc', 'hevx', 'mif1'].includes(brand)) {
+            return { mime: 'image/heic', ext: 'heic' };
+          }
+        }
+        console.log('Unknown image format, first 16 bytes:', buf.slice(0, 16));
+        return { mime: contentType, ext: contentType.split('/')[1] || 'jpg' };
+      };
+
+      const imageType = getImageType(buffer);
+      console.log('Detected image type:', imageType, 'Buffer size:', buffer.length);
+
       const id = crypto.randomUUID();
-      const extension = contentType.split('/')[1] || 'jpg';
+      const extension = imageType.ext;
 
       // Upload to Vercel Blob
       const blob = await put(`images/${id}.${extension}`, buffer, {
         access: 'public',
-        contentType,
+        contentType: imageType.mime,
       });
 
       // Save to database

@@ -7,4 +7,13 @@ const nextConfig = {
   },
 };
 
-module.exports = nextConfig;
+// Only use serwist in production to avoid compile spam in dev
+if (process.env.NODE_ENV === 'production') {
+  const withSerwist = require('@serwist/next').default({
+    swSrc: 'src/sw.ts',
+    swDest: 'public/sw.js',
+  });
+  module.exports = withSerwist(nextConfig);
+} else {
+  module.exports = nextConfig;
+}

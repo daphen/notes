@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { ArrowLeft, Save, Trash2, Eye, Edit } from 'lucide-react';
 import Link from 'next/link';
 import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
@@ -115,7 +116,7 @@ export default function NotePage({
 
         {preview ? (
           <div className="prose dark:prose-invert max-w-none rounded-md border p-4">
-            <ReactMarkdown>{content}</ReactMarkdown>
+            <ReactMarkdown remarkPlugins={[remarkGfm]}>{content}</ReactMarkdown>
           </div>
         ) : (
           <Textarea
