@@ -105,7 +105,8 @@ export function NotesProvider({ children, initialNotes }: NotesProviderProps) {
   const addNote = useCallback(
     (title: string, content: string): NoteWithSync => {
       const tempId = `temp-${Date.now()}`;
-      const path = `${title.toLowerCase().replace(/\s+/g, '-')}.md`;
+      const slug = title.toLowerCase().replace(/\s+/g, '-');
+      const path = `${slug}-${Date.now()}.md`;
       const now = new Date();
 
       const optimisticNote: NoteWithSync = {

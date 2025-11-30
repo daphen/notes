@@ -33,14 +33,15 @@ function TabTrigger({
   return (
     <Tabs.Trigger
       className={cn(
-        "relative flex cursor-pointer items-center justify-center px-4 py-2 text-sm font-medium transition-colors",
+        "relative flex cursor-pointer items-center justify-center transition-colors",
         "text-muted-foreground hover:text-foreground data-[state=active]:text-foreground",
-        "rounded-md gap-1.5"
+        "rounded-md gap-1.5 text-sm font-medium",
+        "p-3 sm:px-4 sm:py-2"
       )}
       value={value}
     >
-      {Icon && <Icon className="size-4" />}
-      {children}
+      {Icon && <Icon className="size-6 sm:size-4" />}
+      <span className="hidden sm:inline">{children}</span>
       {currentTab === value && (
         <motion.div
           className="absolute inset-0 rounded-md bg-muted"
@@ -79,22 +80,15 @@ export function AnimatedTabs({ tabs, defaultValue }: AnimatedTabsProps) {
           ))}
         </Tabs.List>
 
-        <AnimatePresence mode="wait" initial={false}>
-          {tabs.map((t) =>
-            tab === t.value ? (
-              <Tabs.Content key={t.value} value={t.value} forceMount asChild>
-                <motion.div
-                  initial={{ opacity: 0, y: 10 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  exit={{ opacity: 0, y: -10 }}
-                  transition={{ duration: 0.2 }}
-                >
-                  {t.content}
-                </motion.div>
-              </Tabs.Content>
-            ) : null
-          )}
-        </AnimatePresence>
+        {tabs.map((t) => (
+          <Tabs.Content
+            key={t.value}
+            value={t.value}
+            className="data-[state=inactive]:hidden"
+          >
+            {t.content}
+          </Tabs.Content>
+        ))}
       </Tabs.Root>
     </LayoutGroup>
   );
