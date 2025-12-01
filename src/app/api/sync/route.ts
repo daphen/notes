@@ -69,11 +69,21 @@ export async function POST(request: NextRequest) {
             .set({ deletedAt: new Date() })
             .where(eq(notes.path, path));
         } else {
-          // Upsert
+          // Upsert - extract title from first line or filename
+          const firstLine = (content || '').split('\n')[0]?.trim() || '';
+          let title = 'Untitled';
+          if (firstLine.startsWith('#')) {
+            title = firstLine.replace(/^#+\s*/, '').trim() || 'Untitled';
+          } else if (firstLine && firstLine.length <= 100) {
+            title = firstLine;
+          } else {
+            title = path.replace('.md', '') || 'Untitled';
+          }
+
           await db
             .insert(notes)
             .values({
-              title: path.split('/').pop()?.replace('.md', '') || 'Untitled',
+              title,
               content: content || '',
               path,
               checksum: checksum(content || ''),
@@ -81,6 +91,7 @@ export async function POST(request: NextRequest) {
             .onConflictDoUpdate({
               target: notes.path,
               set: {
+                title,
                 content: content || '',
                 checksum: checksum(content || ''),
                 updatedAt: new Date(),

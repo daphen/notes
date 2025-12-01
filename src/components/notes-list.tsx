@@ -8,11 +8,17 @@ import {
   useSpring,
   useTransform,
 } from 'motion/react';
-import { useOnClickOutside } from 'usehooks-ts';
-import { Plus, X, Trash2, Check } from 'lucide-react';
+import { Plus, Trash2, Check } from 'lucide-react';
 import { useNotes } from '@/lib/notes-store';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
+import {
+  Drawer,
+  DrawerContent,
+  DrawerHeader,
+  DrawerTitle,
+  DrawerDescription,
+} from '@/components/ui/drawer';
 import type { Note } from '@/lib/db/schema';
 
 interface NoteWithSync extends Note {
@@ -187,28 +193,6 @@ export function NotesList() {
   const [activeNote, setActiveNote] = useState<NoteWithSync | null>(null);
   const [editTitle, setEditTitle] = useState('');
   const [editContent, setEditContent] = useState('');
-  const ref = useRef<HTMLDivElement>(null);
-
-  useOnClickOutside(ref as React.RefObject<HTMLElement>, () => {
-    if (activeNote) {
-      // Close without saving - user must click save button
-      setActiveNote(null);
-    }
-  });
-
-  useEffect(() => {
-    function onKeyDown(event: KeyboardEvent) {
-      if (event.key === 'Escape') {
-        if (activeNote) {
-          // Close without saving - user must click save button
-          setActiveNote(null);
-        }
-      }
-    }
-
-    window.addEventListener('keydown', onKeyDown);
-    return () => window.removeEventListener('keydown', onKeyDown);
-  }, [activeNote]);
 
   const openNote = (note: NoteWithSync) => {
     setActiveNote(note);
@@ -217,7 +201,6 @@ export function NotesList() {
   };
 
   const createAndOpenNote = () => {
-    // Create a temporary note object for the editor (not added to list yet)
     const tempNote: NoteWithSync = {
       id: `temp-${Date.now()}`,
       title: '',
@@ -235,125 +218,77 @@ export function NotesList() {
     setEditContent('');
   };
 
+  const handleSave = () => {
+    if (!activeNote) return;
+    const isNewNote = !notes.some(n => n.id === activeNote.id);
+    if (isNewNote) {
+      const newNote = addNote(editTitle || 'Untitled', editContent);
+      updateNote(newNote.id, { title: editTitle || 'Untitled', content: editContent });
+    } else {
+      updateNote(activeNote.id, { title: editTitle, content: editContent });
+    }
+    setActiveNote(null);
+  };
+
+  const handleDelete = () => {
+    if (!activeNote) return;
+    if (notes.some(n => n.id === activeNote.id)) {
+      deleteNote(activeNote.id);
+    }
+    setActiveNote(null);
+  };
+
+  const isNewNote = activeNote ? !notes.some(n => n.id === activeNote.id) : false;
+
   return (
     <>
-      <AnimatePresence>
-        {activeNote ? (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            transition={{ duration: 0.15 }}
-            className="pointer-events-none absolute inset-0 z-10 bg-black/20"
-          />
-        ) : null}
-      </AnimatePresence>
-      <AnimatePresence>
-        {activeNote ? (
-          <motion.div
-            className="absolute inset-0 z-10 grid place-items-center"
-            initial={{ opacity: 1 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            transition={{ duration: 0.1 }}
-          >
-            <motion.div
-              className="bg-muted flex h-fit w-[500px] max-w-[96vw] cursor-pointer flex-col items-start gap-4 overflow-hidden p-4"
-              ref={ref}
-              style={{ borderRadius: 12, willChange: 'transform' }}
-              layoutId={`card-${activeNote.id}`}
-            >
-              <div className="flex w-full items-center gap-4">
-                <div className="flex grow items-center justify-between">
-                  <div className="flex flex-col">
-                    <motion.h2
-                      layoutId={`title-${activeNote.id}`}
-                      className="text-sm font-medium"
-                    >
-                      {activeNote.title}
-                    </motion.h2>
-                    <motion.p
-                      layoutId={`description-${activeNote.id}`}
-                      className="text-muted-foreground text-sm"
-                    >
-                      {activeNote.content.slice(0, 100) || 'No content'}
-                    </motion.p>
-                  </div>
-                  <motion.span
-                    layoutId={`date-${activeNote.id}`}
-                    className="text-muted-foreground text-xs"
-                  >
-                    {new Date(activeNote.updatedAt).toLocaleDateString()}
-                  </motion.span>
-                </div>
-              </div>
-              <motion.div
-                layout
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                exit={{ opacity: 0, transition: { duration: 0.05 } }}
-                className="flex w-full flex-col gap-4"
+      <Drawer open={!!activeNote} onOpenChange={(open) => !open && setActiveNote(null)}>
+        <DrawerContent className="max-h-[96vh]">
+          <DrawerHeader className="flex flex-row items-center justify-between">
+            <div>
+              <DrawerTitle>{isNewNote ? 'New Note' : 'Edit Note'}</DrawerTitle>
+              <DrawerDescription className="sr-only">
+                {isNewNote ? 'Create a new note' : 'Edit your note'}
+              </DrawerDescription>
+            </div>
+            <div className="flex items-center gap-1">
+              {!isNewNote && (
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="text-destructive hover:text-destructive size-8"
+                  onClick={handleDelete}
+                >
+                  <Trash2 className="size-4" />
+                </Button>
+              )}
+              <Button
+                variant="ghost"
+                size="icon"
+                className="size-8 text-green-500 hover:text-green-500"
+                onClick={handleSave}
               >
-                <div className="flex items-center justify-between">
-                  <span className="text-muted-foreground text-sm">Edit note</span>
-                  <div className="flex items-center gap-1">
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="text-destructive hover:text-destructive size-8"
-                      onClick={() => {
-                        deleteNote(activeNote.id);
-                        setActiveNote(null);
-                      }}
-                    >
-                      <Trash2 className="size-4" />
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="size-8 text-green-500 hover:text-green-500"
-                      onClick={() => {
-                        const isNewNote = !notes.some(n => n.id === activeNote.id);
-                        if (isNewNote) {
-                          // Create new note and sync
-                          const newNote = addNote(editTitle || 'Untitled', editContent);
-                          updateNote(newNote.id, { title: editTitle || 'Untitled', content: editContent });
-                        } else {
-                          // Update existing note
-                          updateNote(activeNote.id, { title: editTitle, content: editContent });
-                        }
-                        setActiveNote(null);
-                      }}
-                    >
-                      <Check className="size-4" />
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="size-8"
-                      onClick={() => setActiveNote(null)}
-                    >
-                      <X className="size-4" />
-                    </Button>
-                  </div>
-                </div>
-                <input
-                  value={editTitle}
-                  onChange={(e) => setEditTitle(e.target.value)}
-                  className="bg-background rounded-md px-3 py-2 font-semibold outline-none"
-                  placeholder="Note title..."
-                />
-                <Textarea
-                  value={editContent}
-                  onChange={(e) => setEditContent(e.target.value)}
-                  placeholder="Write your note..."
-                  className="bg-background min-h-[200px] resize-none rounded-md font-mono text-sm"
-                />
-              </motion.div>
-            </motion.div>
-          </motion.div>
-        ) : null}
-      </AnimatePresence>
+                <Check className="size-4" />
+              </Button>
+            </div>
+          </DrawerHeader>
+          <div className="flex flex-col gap-3 px-4 pb-8">
+            <input
+              value={editTitle}
+              onChange={(e) => setEditTitle(e.target.value)}
+              className="bg-muted rounded-md px-3 py-3 text-lg font-semibold outline-none"
+              placeholder="Note title..."
+              autoFocus
+            />
+            <Textarea
+              value={editContent}
+              onChange={(e) => setEditContent(e.target.value)}
+              placeholder="Write your note..."
+              className="bg-muted min-h-[300px] resize-none rounded-md font-mono text-base"
+            />
+          </div>
+        </DrawerContent>
+      </Drawer>
       <ul className="relative z-0 m-0 flex w-full flex-col items-center py-4">
         <li
           onClick={createAndOpenNote}

@@ -74,7 +74,7 @@ export async function DELETE(
   try {
     const { id } = await params;
 
-    // Soft delete
+    // Soft delete in DB
     const [note] = await db
       .update(notes)
       .set({ deletedAt: new Date() })

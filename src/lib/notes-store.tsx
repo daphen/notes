@@ -167,7 +167,6 @@ export function NotesProvider({ children, initialNotes }: NotesProviderProps) {
               body: JSON.stringify({
                 title: currentNote.title,
                 content: currentNote.content,
-                path: currentNote.path
               }),
             });
 

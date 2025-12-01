@@ -1,11 +1,21 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { notes } from '@/lib/db/schema';
-import { eq, isNull } from 'drizzle-orm';
+import { isNull } from 'drizzle-orm';
 import { createHash } from 'crypto';
 
 function checksum(content: string): string {
   return createHash('md5').update(content).digest('hex');
+}
+
+function generateFilename(): string {
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = String(now.getMonth() + 1).padStart(2, '0');
+  const day = String(now.getDate()).padStart(2, '0');
+  const hours = String(now.getHours()).padStart(2, '0');
+  const minutes = String(now.getMinutes()).padStart(2, '0');
+  return `${year}-${month}-${day}-${hours}${minutes}.md`;
 }
 
 export async function GET() {
@@ -29,22 +39,24 @@ export async function GET() {
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { title, content, path } = body;
+    const { title, content } = body;
 
-    if (!title || !path) {
+    if (!title) {
       return NextResponse.json(
-        { error: 'Title and path are required' },
+        { error: 'Title is required' },
         { status: 400 },
       );
     }
 
     const noteContent = content || '';
+    const filename = generateFilename();
+
     const [note] = await db
       .insert(notes)
       .values({
         title,
         content: noteContent,
-        path,
+        path: filename,
         checksum: checksum(noteContent),
       })
       .returning();

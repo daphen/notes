@@ -42,3 +42,6 @@ drizzle/
 
 # sync config (contains secrets)
 sync.conf
+
+# Local notes storage
+storage/
