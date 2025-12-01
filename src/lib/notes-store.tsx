@@ -124,34 +124,7 @@ export function NotesProvider({ children, initialNotes }: NotesProviderProps) {
 
       setNotes((prev) => [optimisticNote, ...prev]);
 
-      // Queue sync
-      syncQueueRef.current.set(tempId, {
-        type: 'create',
-        title,
-        fn: async () => {
-          const res = await fetch('/api/notes', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ title, content, path }),
-          });
-
-          if (!res.ok) throw new Error('Failed to create note');
-
-          const serverNote: Note = await res.json();
-
-          setNotes((prev) =>
-            prev.map((n) =>
-              n._tempId === tempId
-                ? { ...serverNote, _syncStatus: 'synced' }
-                : n
-            )
-          );
-        },
-      });
-
-      // Process queue
-      processQueue();
-
+      // Don't auto-sync - wait for user to save
       return optimisticNote;
     },
     [processQueue]
@@ -162,7 +135,9 @@ export function NotesProvider({ children, initialNotes }: NotesProviderProps) {
     (id: string, updates: Partial<Pick<Note, 'title' | 'content'>>) => {
       const note = notes.find((n) => n.id === id);
       const noteTitle = updates.title || note?.title || 'Untitled';
+      const isTemp = id.startsWith('temp-');
 
+      // Update local state
       setNotes((prev) =>
         prev.map((n) =>
           n.id === id
@@ -171,29 +146,68 @@ export function NotesProvider({ children, initialNotes }: NotesProviderProps) {
         )
       );
 
-      // Debounce updates for the same note
-      syncQueueRef.current.set(`update-${id}`, {
-        type: 'update',
-        title: noteTitle,
-        fn: async () => {
-          const res = await fetch(`/api/notes/${id}`, {
-            method: 'PATCH',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(updates),
-          });
+      if (isTemp) {
+        // Create new note on server
+        syncQueueRef.current.set(`create-${id}`, {
+          type: 'create',
+          title: noteTitle,
+          fn: async () => {
+            const currentNote = await new Promise<NoteWithSync | undefined>((resolve) => {
+              setNotes((prev) => {
+                resolve(prev.find((n) => n.id === id));
+                return prev;
+              });
+            });
 
-          if (!res.ok) throw new Error('Failed to update note');
+            if (!currentNote) return;
 
-          setNotes((prev) =>
-            prev.map((n) => (n.id === id ? { ...n, _syncStatus: 'synced' } : n))
-          );
-        },
-      });
+            const res = await fetch('/api/notes', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                title: currentNote.title,
+                content: currentNote.content,
+                path: currentNote.path
+              }),
+            });
 
-      // Use debounced processing for updates to avoid spam
-      processQueueDebounced();
+            if (!res.ok) throw new Error('Failed to create note');
+
+            const serverNote: Note = await res.json();
+
+            setNotes((prev) =>
+              prev.map((n) =>
+                n.id === id
+                  ? { ...serverNote, _syncStatus: 'synced', _tempId: n._tempId }
+                  : n
+              )
+            );
+          },
+        });
+      } else {
+        // Update existing note on server
+        syncQueueRef.current.set(`update-${id}`, {
+          type: 'update',
+          title: noteTitle,
+          fn: async () => {
+            const res = await fetch(`/api/notes/${id}`, {
+              method: 'PATCH',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(updates),
+            });
+
+            if (!res.ok) throw new Error('Failed to update note');
+
+            setNotes((prev) =>
+              prev.map((n) => (n.id === id ? { ...n, _syncStatus: 'synced' } : n))
+            );
+          },
+        });
+      }
+
+      processQueue();
     },
-    [notes, processQueueDebounced]
+    [notes, processQueue]
   );
 
   // Delete note with optimistic update

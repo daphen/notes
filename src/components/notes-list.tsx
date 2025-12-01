@@ -9,7 +9,7 @@ import {
   useTransform,
 } from 'motion/react';
 import { useOnClickOutside } from 'usehooks-ts';
-import { Plus, X, Trash2 } from 'lucide-react';
+import { Plus, X, Trash2, Check } from 'lucide-react';
 import { useNotes } from '@/lib/notes-store';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
@@ -59,7 +59,7 @@ function SwipeableNoteItem({
       const delta = e.clientX - swipeStartX.current + swipeStartOffset.current;
       const clamped = Math.min(0, Math.max(-itemWidth.current, delta));
 
-      if (clamped < -itemWidth.current * 0.8) {
+      if (clamped < -itemWidth.current * 0.5) {
         isFullySwiped.current = true;
         swipeAmount.set(-itemWidth.current);
       } else {
@@ -79,11 +79,16 @@ function SwipeableNoteItem({
       }
 
       const current = swipeAmount.get();
-      if (current < -itemWidth.current * 0.25) {
-        swipeAmount.set(-itemWidth.current * 0.5);
-      } else {
+      // Show delete button if swiped more than 15%
+      if (current < -itemWidth.current * 0.15) {
+        swipeAmount.set(-itemWidth.current * 0.3);
+        justSwipedRef.current = true;
+      } else if (Math.abs(current) > 5) {
+        // Only mark as swiped if there was actual movement
         swipeAmount.set(0);
+        justSwipedRef.current = true;
       }
+      // If no significant movement, don't set justSwipedRef - allow click to open
     };
 
     document.addEventListener('pointermove', handlePointerMove);
@@ -100,10 +105,19 @@ function SwipeableNoteItem({
     swipeStartOffset.current = swipeAmount.get();
   };
 
+  const justSwipedRef = useRef(false);
+
   const handleClick = () => {
+    // Don't do anything if we just finished swiping
+    if (justSwipedRef.current) {
+      justSwipedRef.current = false;
+      return;
+    }
+
     if (Math.abs(swipeAmount.get()) < 5) {
       onOpen();
     } else {
+      // Tapping on a swiped item resets it
       swipeAmount.set(0);
     }
   };
@@ -113,11 +127,18 @@ function SwipeableNoteItem({
       layoutId={`card-${note.id}`}
       className="relative flex w-[386px] cursor-pointer items-center gap-4 overflow-hidden p-0 bg-background"
       style={{ borderRadius: 8, touchAction: 'pan-y' }}
+      layout
+      exit={{ opacity: 0, scale: 0.95 }}
+      transition={{ duration: 0.2, layout: { duration: 0.2 } }}
     >
       {/* Delete action behind */}
       <motion.div
-        className="absolute inset-y-0 right-0 flex w-full items-center justify-end bg-red-500"
+        className="absolute inset-y-0 right-0 flex w-full items-center justify-end bg-red-500 cursor-pointer"
         style={{ opacity: deleteOpacity }}
+        onClick={(e) => {
+          e.stopPropagation();
+          onDelete();
+        }}
       >
         <motion.div
           className="flex items-center gap-2 pr-4 text-white"
@@ -170,10 +191,7 @@ export function NotesList() {
 
   useOnClickOutside(ref as React.RefObject<HTMLElement>, () => {
     if (activeNote) {
-      const hasChanges = editTitle !== activeNote.title || editContent !== activeNote.content;
-      if (hasChanges) {
-        updateNote(activeNote.id, { title: editTitle, content: editContent });
-      }
+      // Close without saving - user must click save button
       setActiveNote(null);
     }
   });
@@ -182,10 +200,7 @@ export function NotesList() {
     function onKeyDown(event: KeyboardEvent) {
       if (event.key === 'Escape') {
         if (activeNote) {
-          const hasChanges = editTitle !== activeNote.title || editContent !== activeNote.content;
-          if (hasChanges) {
-            updateNote(activeNote.id, { title: editTitle, content: editContent });
-          }
+          // Close without saving - user must click save button
           setActiveNote(null);
         }
       }
@@ -193,12 +208,31 @@ export function NotesList() {
 
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [activeNote, editTitle, editContent, updateNote]);
+  }, [activeNote]);
 
   const openNote = (note: NoteWithSync) => {
     setActiveNote(note);
     setEditTitle(note.title);
     setEditContent(note.content);
+  };
+
+  const createAndOpenNote = () => {
+    // Create a temporary note object for the editor (not added to list yet)
+    const tempNote: NoteWithSync = {
+      id: `temp-${Date.now()}`,
+      title: '',
+      content: '',
+      path: '',
+      checksum: '',
+      createdAt: new Date(),
+      updatedAt: new Date(),
+      deletedAt: null,
+      _syncStatus: 'pending',
+      _tempId: `temp-${Date.now()}`,
+    };
+    setActiveNote(tempNote);
+    setEditTitle('');
+    setEditContent('');
   };
 
   return (
@@ -209,15 +243,22 @@ export function NotesList() {
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
+            transition={{ duration: 0.15 }}
             className="pointer-events-none absolute inset-0 z-10 bg-black/20"
           />
         ) : null}
       </AnimatePresence>
       <AnimatePresence>
         {activeNote ? (
-          <div className="absolute inset-0 z-10 grid place-items-center">
+          <motion.div
+            className="absolute inset-0 z-10 grid place-items-center"
+            initial={{ opacity: 1 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.1 }}
+          >
             <motion.div
-              className="bg-muted flex h-fit w-[500px] cursor-pointer flex-col items-start gap-4 overflow-hidden p-4"
+              className="bg-muted flex h-fit w-[500px] max-w-[96vw] cursor-pointer flex-col items-start gap-4 overflow-hidden p-4"
               ref={ref}
               style={{ borderRadius: 12, willChange: 'transform' }}
               layoutId={`card-${activeNote.id}`}
@@ -270,6 +311,25 @@ export function NotesList() {
                     <Button
                       variant="ghost"
                       size="icon"
+                      className="size-8 text-green-500 hover:text-green-500"
+                      onClick={() => {
+                        const isNewNote = !notes.some(n => n.id === activeNote.id);
+                        if (isNewNote) {
+                          // Create new note and sync
+                          const newNote = addNote(editTitle || 'Untitled', editContent);
+                          updateNote(newNote.id, { title: editTitle || 'Untitled', content: editContent });
+                        } else {
+                          // Update existing note
+                          updateNote(activeNote.id, { title: editTitle, content: editContent });
+                        }
+                        setActiveNote(null);
+                      }}
+                    >
+                      <Check className="size-4" />
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="icon"
                       className="size-8"
                       onClick={() => setActiveNote(null)}
                     >
@@ -291,12 +351,12 @@ export function NotesList() {
                 />
               </motion.div>
             </motion.div>
-          </div>
+          </motion.div>
         ) : null}
       </AnimatePresence>
       <ul className="relative z-0 m-0 flex w-full flex-col items-center py-4">
         <li
-          onClick={() => addNote('New note', '')}
+          onClick={createAndOpenNote}
           className="flex w-[386px] cursor-pointer items-center gap-4 p-0 py-2"
         >
           <div className="bg-muted flex size-10 items-center justify-center rounded-lg">
@@ -304,16 +364,18 @@ export function NotesList() {
           </div>
           <span className="text-muted-foreground font-medium">New note...</span>
         </li>
-        {notes
-          .filter((note) => note.id !== activeNote?.id)
-          .map((note) => (
-            <SwipeableNoteItem
-              key={note.id}
-              note={note}
-              onOpen={() => openNote(note)}
-              onDelete={() => deleteNote(note.id)}
-            />
-          ))}
+        <AnimatePresence mode="popLayout">
+          {notes
+            .filter((note) => note.id !== activeNote?.id)
+            .map((note) => (
+              <SwipeableNoteItem
+                key={note._tempId || note.id}
+                note={note}
+                onOpen={() => openNote(note)}
+                onDelete={() => deleteNote(note.id)}
+              />
+            ))}
+        </AnimatePresence>
       </ul>
     </>
   );
