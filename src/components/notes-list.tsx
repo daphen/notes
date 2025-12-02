@@ -172,9 +172,14 @@ function SwipeableNoteItem({
           </motion.h2>
           <motion.p
             layoutId={`description-${note.id}`}
-            className="text-muted-foreground text-sm"
+            className="text-muted-foreground text-sm line-clamp-2 max-w-[300px]"
           >
-            {note.content.slice(0, 100) || 'No content'}
+            {(() => {
+              // Get first non-empty, non-heading line as preview
+              const lines = note.content.split('\n').filter(l => l.trim() && !l.trim().startsWith('#'));
+              const preview = lines[0]?.slice(0, 100) || 'No content';
+              return preview.length >= 100 ? preview + '…' : preview;
+            })()}
           </motion.p>
         </div>
         <motion.span
