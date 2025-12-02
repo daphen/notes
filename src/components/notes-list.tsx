@@ -277,7 +277,15 @@ export function NotesList() {
               </Button>
             </div>
           </DrawerHeader>
-          <div className="flex flex-col gap-3 px-4 pb-8">
+          <div
+            className="flex flex-col gap-3 px-4 pb-8"
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && e.shiftKey) {
+                e.preventDefault();
+                handleSave();
+              }
+            }}
+          >
             <input
               value={editTitle}
               onChange={(e) => setEditTitle(e.target.value)}
