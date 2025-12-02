@@ -2,11 +2,6 @@ import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { notes, syncLog } from '@/lib/db/schema';
 import { eq, gt, isNull } from 'drizzle-orm';
-import { createHash } from 'crypto';
-
-function checksum(content: string): string {
-  return createHash('md5').update(content).digest('hex');
-}
 
 // GET: Pull changes since timestamp
 export async function GET(request: NextRequest) {
@@ -43,6 +38,7 @@ export async function GET(request: NextRequest) {
 }
 
 // POST: Push local changes
+// Pure CRUD - accepts pre-processed data from client
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
@@ -59,7 +55,7 @@ export async function POST(request: NextRequest) {
     const conflicts: string[] = [];
 
     for (const change of changes) {
-      const { path, content, action } = change;
+      const { path, title, content, checksum, action } = change;
 
       try {
         if (action === 'delete') {
@@ -69,35 +65,21 @@ export async function POST(request: NextRequest) {
             .set({ deletedAt: new Date() })
             .where(eq(notes.path, path));
         } else {
-          // Upsert - use filename as title, or heading if present
-          const firstLine = (content || '').split('\n')[0]?.trim() || '';
-          let title = path.replace('.md', '') || 'Untitled';
-
-          // Only override with heading if explicitly marked with #
-          if (firstLine.startsWith('#')) {
-            const heading = firstLine.replace(/^#+\s*/, '').trim();
-            if (heading) title = heading;
-          }
-
-          // Limit title length to 50 characters
-          if (title.length > 50) {
-            title = title.slice(0, 47) + '...';
-          }
-
+          // Simple upsert - client sends all processed data
           await db
             .insert(notes)
             .values({
-              title,
+              title: title || 'Untitled',
               content: content || '',
               path,
-              checksum: checksum(content || ''),
+              checksum: checksum || '',
             })
             .onConflictDoUpdate({
               target: notes.path,
               set: {
-                title,
+                title: title || 'Untitled',
                 content: content || '',
-                checksum: checksum(content || ''),
+                checksum: checksum || '',
                 updatedAt: new Date(),
               },
             });
