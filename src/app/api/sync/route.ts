@@ -69,15 +69,13 @@ export async function POST(request: NextRequest) {
             .set({ deletedAt: new Date() })
             .where(eq(notes.path, path));
         } else {
-          // Upsert - extract title from first line or filename
+          // Upsert - use filename as title, or heading if present
           const firstLine = (content || '').split('\n')[0]?.trim() || '';
-          let title = 'Untitled';
+          let title = path.replace('.md', '') || 'Untitled';
+
+          // Only override with heading if explicitly marked with #
           if (firstLine.startsWith('#')) {
-            title = firstLine.replace(/^#+\s*/, '').trim() || 'Untitled';
-          } else if (firstLine && firstLine.length <= 100) {
-            title = firstLine;
-          } else {
-            title = path.replace('.md', '') || 'Untitled';
+            title = firstLine.replace(/^#+\s*/, '').trim() || title;
           }
 
           await db
