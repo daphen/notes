@@ -42,11 +42,61 @@ interface NotesProviderProps {
   initialNotes: Note[];
 }
 
+const NOTES_CACHE_KEY = 'notes-offline-cache';
+
+function getCachedNotes(): Note[] {
+  if (typeof window === 'undefined') return [];
+  try {
+    const cached = localStorage.getItem(NOTES_CACHE_KEY);
+    return cached ? JSON.parse(cached) : [];
+  } catch {
+    return [];
+  }
+}
+
+function setCachedNotes(notes: Note[]) {
+  if (typeof window === 'undefined') return;
+  try {
+    localStorage.setItem(NOTES_CACHE_KEY, JSON.stringify(notes));
+  } catch {
+    // localStorage might be full or unavailable
+  }
+}
+
 export function NotesProvider({ children, initialNotes }: NotesProviderProps) {
+  // Use cached notes if server notes are empty (offline/slow connection)
+  const cachedNotes = getCachedNotes();
+  const startingNotes = initialNotes.length > 0 ? initialNotes : cachedNotes;
+
   const [notes, setNotes] = useState<NoteWithSync[]>(
-    initialNotes.map((n) => ({ ...n, _syncStatus: 'synced' }))
+    startingNotes.map((n) => ({ ...n, _syncStatus: 'synced' }))
   );
   const [syncStatus, setSyncStatus] = useState<SyncStatus>('synced');
+
+  // Update notes when initialNotes changes (e.g., after page refresh)
+  useEffect(() => {
+    if (initialNotes.length === 0) return; // Don't clear cache with empty data
+
+    setNotes((currentNotes) => {
+      // Merge server notes with local pending changes
+      const pendingNotes = currentNotes.filter(
+        (n) => n._syncStatus === 'pending' || n._syncStatus === 'syncing'
+      );
+      const serverNotes = initialNotes.map((n) => ({ ...n, _syncStatus: 'synced' as SyncStatus }));
+
+      // Keep pending notes that aren't on server yet, add all server notes
+      const pendingIds = new Set(pendingNotes.map((n) => n._tempId || n.id));
+      const mergedNotes = [
+        ...pendingNotes,
+        ...serverNotes.filter((n) => !pendingIds.has(n.id)),
+      ];
+
+      return mergedNotes;
+    });
+
+    // Cache server notes for offline use
+    setCachedNotes(initialNotes);
+  }, [initialNotes]);
   const syncQueueRef = useRef<Map<string, { fn: () => Promise<void>; type: 'create' | 'update' | 'delete'; title: string }>>(new Map());
   const processingRef = useRef(false);
   const debounceTimerRef = useRef<NodeJS.Timeout | null>(null);
