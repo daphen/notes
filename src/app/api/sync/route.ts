@@ -75,7 +75,13 @@ export async function POST(request: NextRequest) {
 
           // Only override with heading if explicitly marked with #
           if (firstLine.startsWith('#')) {
-            title = firstLine.replace(/^#+\s*/, '').trim() || title;
+            const heading = firstLine.replace(/^#+\s*/, '').trim();
+            if (heading) title = heading;
+          }
+
+          // Limit title length to 50 characters
+          if (title.length > 50) {
+            title = title.slice(0, 47) + '...';
           }
 
           await db
