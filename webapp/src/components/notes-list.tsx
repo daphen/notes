@@ -248,7 +248,7 @@ export function NotesList() {
   return (
     <>
       <Drawer open={!!activeNote} onOpenChange={(open) => !open && setActiveNote(null)}>
-        <DrawerContent className="max-h-[96vh]">
+        <DrawerContent className="flex h-[90vh] flex-col md:h-[60vh]">
           <DrawerHeader className="flex flex-row items-center justify-between">
             <div>
               <DrawerTitle>{isNewNote ? 'New Note' : 'Edit Note'}</DrawerTitle>
@@ -256,29 +256,19 @@ export function NotesList() {
                 {isNewNote ? 'Create a new note' : 'Edit your note'}
               </DrawerDescription>
             </div>
-            <div className="flex items-center gap-1">
-              {!isNewNote && (
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="text-destructive hover:text-destructive size-8"
-                  onClick={handleDelete}
-                >
-                  <Trash2 className="size-4" />
-                </Button>
-              )}
+            {!isNewNote && (
               <Button
                 variant="ghost"
                 size="icon"
-                className="size-8 text-green-500 hover:text-green-500"
-                onClick={handleSave}
+                className="text-destructive hover:text-destructive size-8"
+                onClick={handleDelete}
               >
-                <Check className="size-4" />
+                <Trash2 className="size-4" />
               </Button>
-            </div>
+            )}
           </DrawerHeader>
           <div
-            className="flex flex-col gap-3 px-4 pb-8"
+            className="flex flex-1 flex-col gap-3 px-4 pb-4"
             onKeyDown={(e) => {
               if (e.key === 'Enter' && e.shiftKey) {
                 e.preventDefault();
@@ -297,8 +287,14 @@ export function NotesList() {
               value={editContent}
               onChange={(e) => setEditContent(e.target.value)}
               placeholder="Write your note..."
-              className="bg-muted min-h-[300px] resize-none rounded-md font-mono text-base"
+              className="bg-muted flex-1 resize-none rounded-md font-mono text-base"
             />
+          </div>
+          <div className="sticky bottom-0 flex items-center justify-end border-t bg-background px-4 py-3">
+            <Button onClick={handleSave}>
+              <Check className="size-4" />
+              Save
+            </Button>
           </div>
         </DrawerContent>
       </Drawer>

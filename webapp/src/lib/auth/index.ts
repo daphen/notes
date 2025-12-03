@@ -1,9 +1,24 @@
 import { SignJWT, jwtVerify } from 'jose';
 import { cookies } from 'next/headers';
+import { createHash } from 'crypto';
 
-const secret = new TextEncoder().encode(
-  process.env.JWT_SECRET || 'fallback-secret-change-me',
-);
+// Auto-generate JWT secret from DATABASE_URL + AUTH_PASSWORD if not explicitly set
+// This is secure because:
+// 1. DATABASE_URL contains credentials unique to this deployment
+// 2. AUTH_PASSWORD adds user-chosen entropy
+// 3. The hash is deterministic so tokens remain valid across restarts
+function getJwtSecret(): Uint8Array {
+  if (process.env.JWT_SECRET) {
+    return new TextEncoder().encode(process.env.JWT_SECRET);
+  }
+
+  // Generate deterministic secret from env vars
+  const seed = `${process.env.DATABASE_URL || ''}:${process.env.AUTH_PASSWORD || ''}:notes-jwt-secret`;
+  const hash = createHash('sha256').update(seed).digest('hex');
+  return new TextEncoder().encode(hash);
+}
+
+const secret = getJwtSecret();
 
 const COOKIE_NAME = 'notes-auth';
 

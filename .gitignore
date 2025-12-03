@@ -1,47 +1,45 @@
-# dependencies
-/node_modules
-/.pnp
-.pnp.js
-.yarn/install-state.gz
+# Dependencies
+node_modules/
 
-# testing
-/coverage
+# Build outputs
+webapp/.next/
+webapp/out/
+cli/notes-cli
 
-# next.js
-/.next/
-/out/
-
-# production
-/build
-
-# misc
-.DS_Store
-*.pem
-
-# debug
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
-
-# local env files
-.env*.local
+# Environment files (contain secrets)
 .env
+.env.local
+.env.*.local
+webapp/.env.local
+webapp/.env
 
-# vercel
-.vercel
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
 
-# typescript
-*.tsbuildinfo
-next-env.d.ts
+# OS
+.DS_Store
+Thumbs.db
 
-# drizzle
+# Vercel
+.vercel/
+
+# Local storage/cache
+webapp/storage/
+webapp/.sync-cache
+webapp/sync.conf
+
+# Drizzle
 drizzle/
 
-# local notes storage
-/storage/
+# TypeScript
+*.tsbuildinfo
 
-# sync config (contains secrets)
-sync.conf
+# Logs
+*.log
+npm-debug.log*
 
-# Local notes storage
-storage/
+# Claude
+.claude/

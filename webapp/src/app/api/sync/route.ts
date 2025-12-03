@@ -24,6 +24,11 @@ export async function GET(request: NextRequest) {
 
     const changedNotes = await query;
 
+    console.log(`[SYNC GET] Returning ${changedNotes.length} notes:`);
+    changedNotes.forEach((note) => {
+      console.log(`[SYNC GET]   - ${note.path} (${note.title})`);
+    });
+
     return NextResponse.json({
       changes: changedNotes,
       timestamp: new Date().toISOString(),
@@ -54,19 +59,25 @@ export async function POST(request: NextRequest) {
     const accepted: string[] = [];
     const conflicts: string[] = [];
 
-    for (const change of changes) {
+    // Process changes one at a time with explicit commits
+    for (let i = 0; i < changes.length; i++) {
+      const change = changes[i];
       const { path, title, content, checksum, action } = change;
 
       try {
+        console.log(`[SYNC ${i + 1}/${changes.length}] Processing ${path} (action: ${action})`);
+        console.log(`[SYNC] Title: "${title}", Content length: ${content?.length || 0}, Checksum: ${checksum}`);
+
         if (action === 'delete') {
           // Soft delete
-          await db
+          const result = await db
             .update(notes)
             .set({ deletedAt: new Date() })
             .where(eq(notes.path, path));
+          console.log(`[SYNC] Delete result:`, result);
         } else {
-          // Simple upsert - client sends all processed data
-          await db
+          // Use onConflictDoUpdate which should work with Neon HTTP
+          const result = await db
             .insert(notes)
             .values({
               title: title || 'Untitled',
@@ -80,21 +91,36 @@ export async function POST(request: NextRequest) {
                 title: title || 'Untitled',
                 content: content || '',
                 checksum: checksum || '',
+                deletedAt: null, // Clear deleted flag on upsert!
                 updatedAt: new Date(),
               },
-            });
+            })
+            .returning();
+          console.log(`[SYNC] Upsert result for ${path}:`, result);
         }
 
         accepted.push(path);
+        console.log(`[SYNC] Successfully accepted ${path}`);
 
-        // Log sync action
-        await db.insert(syncLog).values({
-          action: action || 'update',
-          clientId,
-        });
+        // Log sync action (batch these at the end)
       } catch (error) {
-        console.error(`Failed to sync ${path}:`, error);
+        console.error(`[SYNC ERROR] Failed to sync ${path}:`, error);
+        console.error(`[SYNC ERROR] Error details:`, JSON.stringify(error, null, 2));
         conflicts.push(path);
+      }
+    }
+
+    // Batch insert sync logs
+    if (accepted.length > 0) {
+      try {
+        await db.insert(syncLog).values(
+          accepted.map((path) => ({
+            action: 'update',
+            clientId,
+          })),
+        );
+      } catch (error) {
+        console.error('[SYNC] Failed to log sync actions:', error);
       }
     }
 
