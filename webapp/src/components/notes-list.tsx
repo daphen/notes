@@ -193,6 +193,29 @@ export function NotesList() {
   const [editContent, setEditContent] = useState('');
   const titleInputRef = useRef<HTMLInputElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const [keyboardOffset, setKeyboardOffset] = useState(0);
+
+  // Track keyboard height via visualViewport
+  useEffect(() => {
+    if (!activeNote) return;
+
+    const viewport = window.visualViewport;
+    if (!viewport) return;
+
+    const updateOffset = () => {
+      const offset = window.innerHeight - viewport.height;
+      setKeyboardOffset(Math.max(0, offset));
+    };
+
+    updateOffset();
+    viewport.addEventListener('resize', updateOffset);
+    viewport.addEventListener('scroll', updateOffset);
+
+    return () => {
+      viewport.removeEventListener('resize', updateOffset);
+      viewport.removeEventListener('scroll', updateOffset);
+    };
+  }, [activeNote]);
 
   // Focus title input without scrolling when note opens
   useEffect(() => {
@@ -415,7 +438,7 @@ export function NotesList() {
 
             {/* Editor */}
             <div
-              className="min-h-0 flex-1 overflow-auto p-4"
+              className="flex min-h-0 flex-1 flex-col overflow-auto p-4 pb-16"
               onKeyDown={(e) => {
                 if (e.key === 'Enter' && e.shiftKey) {
                   e.preventDefault();
@@ -427,7 +450,7 @@ export function NotesList() {
                 ref={titleInputRef}
                 value={editTitle}
                 onChange={(e) => setEditTitle(e.target.value)}
-                className="mb-3 w-full bg-transparent text-xl font-semibold outline-none placeholder:text-muted-foreground"
+                className="mb-3 w-full shrink-0 bg-transparent text-xl font-semibold outline-none placeholder:text-muted-foreground"
                 placeholder="Note title..."
               />
               <Textarea
@@ -437,12 +460,15 @@ export function NotesList() {
                 onClick={handleContentClick}
                 onKeyDown={handleContentKeyDown}
                 placeholder="Write your note..."
-                className="min-h-[50vh] w-full resize-none border-0 bg-transparent p-0 font-mono text-base shadow-none focus-visible:ring-0"
+                className="min-h-0 flex-1 w-full resize-none border-0 bg-transparent p-0 font-mono text-base shadow-none focus-visible:ring-0"
               />
             </div>
 
             {/* Action bar */}
-            <div className="shrink-0 flex flex-nowrap items-center gap-1 border-t bg-background px-2 py-2 overflow-x-auto scrollbar-hide">
+            <div
+              className="fixed left-0 right-0 flex flex-nowrap items-center gap-1 border-t bg-background px-2 py-2 overflow-x-auto scrollbar-hide"
+              style={{ bottom: keyboardOffset }}
+            >
               <Button
                 size="sm"
                 className="h-9 px-3 shrink-0"
