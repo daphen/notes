@@ -384,7 +384,7 @@ export function NotesList() {
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: '100%' }}
             transition={{ duration: 0.3, ease: [0.32, 0.72, 0, 1] }}
-            className="fixed inset-x-0 top-0 z-50 flex h-dvh flex-col bg-background"
+            className="fixed left-0 right-0 top-0 z-50 flex h-dvh flex-col bg-background"
           >
             {/* Header */}
             <div className="flex items-center justify-between border-b px-4 py-3">
@@ -415,7 +415,7 @@ export function NotesList() {
 
             {/* Editor */}
             <div
-              className="flex min-h-0 flex-1 flex-col gap-3 overflow-auto p-4 pb-2"
+              className="min-h-0 flex-1 overflow-auto p-4"
               onKeyDown={(e) => {
                 if (e.key === 'Enter' && e.shiftKey) {
                   e.preventDefault();
@@ -427,7 +427,7 @@ export function NotesList() {
                 ref={titleInputRef}
                 value={editTitle}
                 onChange={(e) => setEditTitle(e.target.value)}
-                className="shrink-0 bg-transparent text-xl font-semibold outline-none placeholder:text-muted-foreground"
+                className="mb-3 w-full bg-transparent text-xl font-semibold outline-none placeholder:text-muted-foreground"
                 placeholder="Note title..."
               />
               <Textarea
@@ -437,7 +437,7 @@ export function NotesList() {
                 onClick={handleContentClick}
                 onKeyDown={handleContentKeyDown}
                 placeholder="Write your note..."
-                className="min-h-[200px] flex-1 resize-none border-0 bg-transparent p-0 font-mono text-base shadow-none focus-visible:ring-0"
+                className="min-h-[50vh] w-full resize-none border-0 bg-transparent p-0 font-mono text-base shadow-none focus-visible:ring-0"
               />
             </div>
 
