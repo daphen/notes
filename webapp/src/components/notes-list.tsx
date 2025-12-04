@@ -407,7 +407,7 @@ export function NotesList() {
 
             {/* Editor */}
             <div
-              className="flex flex-1 flex-col gap-3 overflow-auto p-4 pb-0"
+              className="flex min-h-0 flex-1 flex-col gap-3 overflow-auto p-4 pb-2"
               onKeyDown={(e) => {
                 if (e.key === 'Enter' && e.shiftKey) {
                   e.preventDefault();
@@ -418,7 +418,7 @@ export function NotesList() {
               <input
                 value={editTitle}
                 onChange={(e) => setEditTitle(e.target.value)}
-                className="bg-transparent text-xl font-semibold outline-none placeholder:text-muted-foreground"
+                className="shrink-0 bg-transparent text-xl font-semibold outline-none placeholder:text-muted-foreground"
                 placeholder="Note title..."
                 autoFocus
               />
@@ -429,12 +429,12 @@ export function NotesList() {
                 onClick={handleContentClick}
                 onKeyDown={handleContentKeyDown}
                 placeholder="Write your note..."
-                className="flex-1 resize-none border-0 bg-transparent p-0 font-mono text-base shadow-none focus-visible:ring-0"
+                className="min-h-[200px] flex-1 resize-none border-0 bg-transparent p-0 font-mono text-base shadow-none focus-visible:ring-0"
               />
             </div>
 
             {/* Action bar */}
-            <div className="sticky bottom-0 flex flex-nowrap items-center gap-1 border-t bg-background px-2 py-2 overflow-x-auto scrollbar-none">
+            <div className="shrink-0 flex flex-nowrap items-center gap-1 border-t bg-background px-2 py-2 overflow-x-auto scrollbar-none">
               <Button
                 size="sm"
                 className="h-9 px-3 shrink-0"
