@@ -8,7 +8,7 @@ import {
   useSpring,
   useTransform,
 } from 'motion/react';
-import { Plus, Trash2, Check, ArrowLeft } from 'lucide-react';
+import { Plus, Trash2, Check, ArrowLeft, CheckSquare, Hash, Bold, Italic, Link2, List } from 'lucide-react';
 import { useNotes } from '@/lib/notes-store';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
@@ -191,6 +191,120 @@ export function NotesList() {
   const [activeNote, setActiveNote] = useState<NoteWithSync | null>(null);
   const [editTitle, setEditTitle] = useState('');
   const [editContent, setEditContent] = useState('');
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  // Insert text at cursor position
+  const insertAtCursor = (before: string, after: string = '') => {
+    const textarea = textareaRef.current;
+    if (!textarea) return;
+
+    const start = textarea.selectionStart;
+    const end = textarea.selectionEnd;
+    const selectedText = editContent.slice(start, end);
+    const newText = editContent.slice(0, start) + before + selectedText + after + editContent.slice(end);
+
+    setEditContent(newText);
+
+    // Set cursor position after insert
+    requestAnimationFrame(() => {
+      textarea.focus();
+      const newPos = start + before.length + selectedText.length + after.length;
+      textarea.setSelectionRange(
+        selectedText ? newPos : start + before.length,
+        selectedText ? newPos : start + before.length
+      );
+    });
+  };
+
+  // Insert at start of current line
+  const insertAtLineStart = (prefix: string) => {
+    const textarea = textareaRef.current;
+    if (!textarea) return;
+
+    const start = textarea.selectionStart;
+    const lineStart = editContent.lastIndexOf('\n', start - 1) + 1;
+    const newText = editContent.slice(0, lineStart) + prefix + editContent.slice(lineStart);
+
+    setEditContent(newText);
+
+    requestAnimationFrame(() => {
+      textarea.focus();
+      textarea.setSelectionRange(start + prefix.length, start + prefix.length);
+    });
+  };
+
+  // Handle enter key for auto-continuing lists/tasks
+  const handleContentKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      const textarea = e.currentTarget;
+      const cursorPos = textarea.selectionStart;
+
+      // Find the current line
+      const lineStart = editContent.lastIndexOf('\n', cursorPos - 1) + 1;
+      const lineEnd = editContent.indexOf('\n', cursorPos);
+      const line = editContent.slice(lineStart, lineEnd === -1 ? undefined : lineEnd);
+
+      // Check for task or list patterns
+      const taskMatch = line.match(/^(\s*-\s*\[[ x]\]\s*)/);
+      const listMatch = line.match(/^(\s*-\s+)/);
+
+      const prefix = taskMatch ? taskMatch[1].replace(/\[x\]/, '[ ]') : listMatch ? listMatch[1] : null;
+
+      if (prefix) {
+        // If the line is empty (just the prefix), remove it instead of continuing
+        const lineContent = line.slice(prefix.length).trim();
+        if (!lineContent) {
+          e.preventDefault();
+          const newContent = editContent.slice(0, lineStart) + editContent.slice(lineEnd === -1 ? editContent.length : lineEnd);
+          setEditContent(newContent);
+          requestAnimationFrame(() => {
+            textarea.setSelectionRange(lineStart, lineStart);
+          });
+          return;
+        }
+
+        e.preventDefault();
+        const insertPos = lineEnd === -1 ? editContent.length : lineEnd;
+        const newContent = editContent.slice(0, insertPos) + '\n' + prefix + editContent.slice(insertPos);
+        setEditContent(newContent);
+
+        requestAnimationFrame(() => {
+          const newCursorPos = insertPos + 1 + prefix.length;
+          textarea.setSelectionRange(newCursorPos, newCursorPos);
+        });
+      }
+    }
+  };
+
+  // Handle clicking on checkboxes to toggle them
+  const handleContentClick = (e: React.MouseEvent<HTMLTextAreaElement>) => {
+    const textarea = e.currentTarget;
+    const clickPos = textarea.selectionStart;
+
+    // Find the line containing the click
+    const lineStart = editContent.lastIndexOf('\n', clickPos - 1) + 1;
+    const lineEnd = editContent.indexOf('\n', clickPos);
+    const line = editContent.slice(lineStart, lineEnd === -1 ? undefined : lineEnd);
+
+    // Check if it's a checkbox line and click is near the checkbox
+    const checkboxMatch = line.match(/^(\s*-\s*\[)([ x])(\])/);
+    if (checkboxMatch) {
+      const checkboxStartInLine = checkboxMatch[1].length;
+      const clickPosInLine = clickPos - lineStart;
+
+      // If click is within the checkbox area ([ ] or [x])
+      if (clickPosInLine >= checkboxStartInLine - 1 && clickPosInLine <= checkboxStartInLine + 2) {
+        const isChecked = checkboxMatch[2] === 'x';
+        const newLine = line.replace(
+          /^(\s*-\s*\[)([ x])(\])/,
+          `$1${isChecked ? ' ' : 'x'}$3`
+        );
+        const newContent = editContent.slice(0, lineStart) + newLine + editContent.slice(lineEnd === -1 ? editContent.length : lineEnd);
+        setEditContent(newContent);
+        e.preventDefault();
+      }
+    }
+  };
 
   const openNote = (note: NoteWithSync) => {
     setActiveNote(note);
@@ -279,27 +393,21 @@ export function NotesList() {
                   {isNewNote ? 'New Note' : 'Edit Note'}
                 </span>
               </div>
-              <div className="flex items-center gap-2">
-                {!isNewNote && (
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="text-destructive hover:text-destructive size-9"
-                    onClick={handleDelete}
-                  >
-                    <Trash2 className="size-4" />
-                  </Button>
-                )}
-                <Button size="sm" onClick={handleSave}>
-                  <Check className="size-4" />
-                  Save
+              {!isNewNote && (
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="text-destructive hover:text-destructive size-9"
+                  onClick={handleDelete}
+                >
+                  <Trash2 className="size-4" />
                 </Button>
-              </div>
+              )}
             </div>
 
             {/* Editor */}
             <div
-              className="flex flex-1 flex-col gap-3 overflow-auto p-4"
+              className="flex flex-1 flex-col gap-3 overflow-auto p-4 pb-0"
               onKeyDown={(e) => {
                 if (e.key === 'Enter' && e.shiftKey) {
                   e.preventDefault();
@@ -315,11 +423,81 @@ export function NotesList() {
                 autoFocus
               />
               <Textarea
+                ref={textareaRef}
                 value={editContent}
                 onChange={(e) => setEditContent(e.target.value)}
+                onClick={handleContentClick}
+                onKeyDown={handleContentKeyDown}
                 placeholder="Write your note..."
                 className="flex-1 resize-none border-0 bg-transparent p-0 font-mono text-base shadow-none focus-visible:ring-0"
               />
+            </div>
+
+            {/* Action bar */}
+            <div className="sticky bottom-0 flex items-center gap-1 border-t bg-background px-2 py-2 overflow-x-auto">
+              <Button
+                size="sm"
+                className="h-9 px-3 shrink-0"
+                onClick={handleSave}
+              >
+                <Check className="size-4 mr-1.5" />
+                <span className="text-xs">Save</span>
+              </Button>
+              <div className="w-px h-6 bg-border mx-1 shrink-0" />
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-9 px-3 shrink-0"
+                onClick={() => insertAtLineStart('- [ ] ')}
+              >
+                <CheckSquare className="size-4 mr-1.5" />
+                <span className="text-xs">Task</span>
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-9 px-3 shrink-0"
+                onClick={() => insertAtLineStart('- ')}
+              >
+                <List className="size-4 mr-1.5" />
+                <span className="text-xs">List</span>
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-9 px-3 shrink-0"
+                onClick={() => insertAtLineStart('## ')}
+              >
+                <Hash className="size-4 mr-1.5" />
+                <span className="text-xs">H2</span>
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-9 px-3 shrink-0"
+                onClick={() => insertAtCursor('**', '**')}
+              >
+                <Bold className="size-4 mr-1.5" />
+                <span className="text-xs">Bold</span>
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-9 px-3 shrink-0"
+                onClick={() => insertAtCursor('*', '*')}
+              >
+                <Italic className="size-4 mr-1.5" />
+                <span className="text-xs">Italic</span>
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-9 px-3 shrink-0"
+                onClick={() => insertAtCursor('[', '](url)')}
+              >
+                <Link2 className="size-4 mr-1.5" />
+                <span className="text-xs">Link</span>
+              </Button>
             </div>
           </motion.div>
         )}

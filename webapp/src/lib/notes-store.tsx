@@ -63,13 +63,20 @@ function setCachedNotes(notes: Note[]) {
   }
 }
 
+// Sort notes by updatedAt descending (most recent first)
+function sortByUpdatedAt(notes: NoteWithSync[]): NoteWithSync[] {
+  return [...notes].sort((a, b) =>
+    new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()
+  );
+}
+
 export function NotesProvider({ children, initialNotes }: NotesProviderProps) {
   // Use cached notes if server notes are empty (offline/slow connection)
   const cachedNotes = getCachedNotes();
   const startingNotes = initialNotes.length > 0 ? initialNotes : cachedNotes;
 
   const [notes, setNotes] = useState<NoteWithSync[]>(
-    startingNotes.map((n) => ({ ...n, _syncStatus: 'synced' }))
+    sortByUpdatedAt(startingNotes.map((n) => ({ ...n, _syncStatus: 'synced' })))
   );
   const [syncStatus, setSyncStatus] = useState<SyncStatus>('synced');
 
@@ -91,7 +98,7 @@ export function NotesProvider({ children, initialNotes }: NotesProviderProps) {
         ...serverNotes.filter((n) => !pendingIds.has(n.id)),
       ];
 
-      return mergedNotes;
+      return sortByUpdatedAt(mergedNotes);
     });
 
     // Cache server notes for offline use
@@ -187,12 +194,14 @@ export function NotesProvider({ children, initialNotes }: NotesProviderProps) {
       const noteTitle = updates.title || note?.title || 'Untitled';
       const isTemp = id.startsWith('temp-');
 
-      // Update local state
+      // Update local state and re-sort to move updated note to top
       setNotes((prev) =>
-        prev.map((n) =>
-          n.id === id
-            ? { ...n, ...updates, updatedAt: new Date(), _syncStatus: 'pending' }
-            : n
+        sortByUpdatedAt(
+          prev.map((n) =>
+            n.id === id
+              ? { ...n, ...updates, updatedAt: new Date(), _syncStatus: 'pending' }
+              : n
+          )
         )
       );
 
