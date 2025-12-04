@@ -384,7 +384,7 @@ export function NotesList() {
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: '100%' }}
             transition={{ duration: 0.3, ease: [0.32, 0.72, 0, 1] }}
-            className="fixed inset-0 z-50 flex flex-col bg-background"
+            className="fixed inset-x-0 top-0 z-50 flex h-dvh flex-col bg-background"
           >
             {/* Header */}
             <div className="flex items-center justify-between border-b px-4 py-3">
