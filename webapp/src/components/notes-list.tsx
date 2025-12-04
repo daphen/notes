@@ -434,7 +434,7 @@ export function NotesList() {
             </div>
 
             {/* Action bar */}
-            <div className="sticky bottom-0 flex items-center gap-1 border-t bg-background px-2 py-2 overflow-x-auto">
+            <div className="sticky bottom-0 flex flex-nowrap items-center gap-1 border-t bg-background px-2 py-2 overflow-x-auto scrollbar-none">
               <Button
                 size="sm"
                 className="h-9 px-3 shrink-0"
