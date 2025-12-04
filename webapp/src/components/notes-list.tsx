@@ -191,7 +191,15 @@ export function NotesList() {
   const [activeNote, setActiveNote] = useState<NoteWithSync | null>(null);
   const [editTitle, setEditTitle] = useState('');
   const [editContent, setEditContent] = useState('');
+  const titleInputRef = useRef<HTMLInputElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  // Focus title input without scrolling when note opens
+  useEffect(() => {
+    if (activeNote && titleInputRef.current) {
+      titleInputRef.current.focus({ preventScroll: true });
+    }
+  }, [activeNote]);
 
   // Insert text at cursor position
   const insertAtCursor = (before: string, after: string = '') => {
@@ -416,11 +424,11 @@ export function NotesList() {
               }}
             >
               <input
+                ref={titleInputRef}
                 value={editTitle}
                 onChange={(e) => setEditTitle(e.target.value)}
                 className="shrink-0 bg-transparent text-xl font-semibold outline-none placeholder:text-muted-foreground"
                 placeholder="Note title..."
-                autoFocus
               />
               <Textarea
                 ref={textareaRef}
@@ -434,7 +442,7 @@ export function NotesList() {
             </div>
 
             {/* Action bar */}
-            <div className="shrink-0 flex flex-nowrap items-center gap-1 border-t bg-background px-2 py-2 overflow-x-auto scrollbar-none">
+            <div className="shrink-0 flex flex-nowrap items-center gap-1 border-t bg-background px-2 py-2 overflow-x-auto scrollbar-hide">
               <Button
                 size="sm"
                 className="h-9 px-3 shrink-0"
