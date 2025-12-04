@@ -80,15 +80,27 @@ export function AnimatedTabs({ tabs, defaultValue }: AnimatedTabsProps) {
           ))}
         </Tabs.List>
 
-        {tabs.map((t) => (
-          <Tabs.Content
-            key={t.value}
-            value={t.value}
-            className="data-[state=inactive]:hidden"
-          >
-            {t.content}
-          </Tabs.Content>
-        ))}
+        <AnimatePresence mode="wait">
+          {tabs.map((t) =>
+            t.value === tab ? (
+              <Tabs.Content
+                key={t.value}
+                value={t.value}
+                forceMount
+                asChild
+              >
+                <motion.div
+                  initial={{ opacity: 0, y: 8 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -8 }}
+                  transition={{ duration: 0.2, ease: 'easeOut' }}
+                >
+                  {t.content}
+                </motion.div>
+              </Tabs.Content>
+            ) : null
+          )}
+        </AnimatePresence>
       </Tabs.Root>
     </LayoutGroup>
   );

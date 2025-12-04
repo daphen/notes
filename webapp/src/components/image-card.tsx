@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { Trash2 } from 'lucide-react';
+import { Trash2, ImageOff } from 'lucide-react';
 import type { Image as ImageType } from '@/lib/db/schema';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -14,6 +14,7 @@ interface ImageCardProps {
 export function ImageCard({ image }: ImageCardProps) {
   const router = useRouter();
   const [deleting, setDeleting] = useState(false);
+  const [imageError, setImageError] = useState(false);
 
   async function handleDelete(e: React.MouseEvent) {
     e.preventDefault();
@@ -43,12 +44,20 @@ export function ImageCard({ image }: ImageCardProps) {
         className="block"
       >
         <Card className="overflow-hidden transition-colors hover:ring-2 hover:ring-primary">
-          <div className="aspect-square w-full overflow-hidden">
-            <img
-              src={image.url}
-              alt={image.title || ''}
-              className="h-full w-full object-cover transition-transform group-hover:scale-105"
-            />
+          <div className="aspect-square w-full overflow-hidden bg-muted">
+            {imageError ? (
+              <div className="flex h-full w-full flex-col items-center justify-center gap-2 text-muted-foreground">
+                <ImageOff className="h-8 w-8" />
+                <span className="text-xs">Broken image</span>
+              </div>
+            ) : (
+              <img
+                src={image.url}
+                alt={image.title || ''}
+                className="h-full w-full object-cover transition-transform group-hover:scale-105"
+                onError={() => setImageError(true)}
+              />
+            )}
           </div>
           {image.title && (
             <div className="p-2">

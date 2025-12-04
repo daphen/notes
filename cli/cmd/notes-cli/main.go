@@ -243,19 +243,26 @@ func pullNotes(cfg *config.Config, apiClient *client.Client) error {
 
 	fmt.Printf("Received %d notes\n", len(resp.Changes))
 
-	for _, note := range resp.Changes {
-		fullPath := filepath.Join(cfg.NotesDir, note.Path)
+	for _, n := range resp.Changes {
+		fullPath := filepath.Join(cfg.NotesDir, n.Path)
 
 		dir := filepath.Dir(fullPath)
 		if err := os.MkdirAll(dir, 0755); err != nil {
 			return fmt.Errorf("failed to create directory: %w", err)
 		}
 
-		if err := os.WriteFile(fullPath, []byte(note.Content), 0644); err != nil {
-			return fmt.Errorf("failed to write %s: %w", note.Path, err)
+		if err := os.WriteFile(fullPath, []byte(n.Content), 0644); err != nil {
+			return fmt.Errorf("failed to write %s: %w", n.Path, err)
 		}
 
-		fmt.Printf("  ✓ %s\n", note.Path)
+		// Preserve server's modification time
+		if n.UpdatedAt != "" {
+			if modTime, err := time.Parse(time.RFC3339, n.UpdatedAt); err == nil {
+				os.Chtimes(fullPath, modTime, modTime)
+			}
+		}
+
+		fmt.Printf("  ✓ %s\n", n.Path)
 	}
 
 	return nil
@@ -264,8 +271,7 @@ func pullNotes(cfg *config.Config, apiClient *client.Client) error {
 func quickCreate(cfg *config.Config, apiClient *client.Client) error {
 	// Start TUI in create mode
 	model := ui.NewModel(cfg.NotesDir)
-	// Switch to create view immediately
-	// (We'll need to add a method to set this)
+	model.SetCreateView() // Switch to create view immediately
 
 	p := tea.NewProgram(model, tea.WithAltScreen())
 	model.SetProgram(p)
@@ -281,41 +287,49 @@ func quickCreate(cfg *config.Config, apiClient *client.Client) error {
 }
 
 func browseWithSync(cfg *config.Config, apiClient *client.Client) error {
-	// Pull from server first to get any remote changes
-	fmt.Println("Syncing from server...")
-	resp, err := apiClient.Pull()
-	if err != nil {
-		fmt.Printf("Warning: Could not sync from server: %v\n", err)
-		// Continue anyway - don't block launching the TUI
-	} else if len(resp.Changes) > 0 {
-		// Apply remote changes to local files
-		for _, note := range resp.Changes {
-			fullPath := filepath.Join(cfg.NotesDir, note.Path)
-			dir := filepath.Dir(fullPath)
-			if err := os.MkdirAll(dir, 0755); err != nil {
-				fmt.Printf("Warning: Could not create directory for %s: %v\n", note.Path, err)
-				continue
-			}
-			if err := os.WriteFile(fullPath, []byte(note.Content), 0644); err != nil {
-				fmt.Printf("Warning: Could not write %s: %v\n", note.Path, err)
-				continue
-			}
-		}
-		fmt.Printf("Synced %d notes from server\n", len(resp.Changes))
-	}
-
 	// Create the TUI model
 	model := ui.NewModel(cfg.NotesDir)
 
 	// Create the program with alt screen (full terminal takeover)
-	// 🔵 BUBBLE TEA CONCEPT: tea.WithAltScreen
-	// This uses the "alternate screen buffer" - when you quit,
-	// your terminal history is preserved (like vim, less, etc.)
 	p := tea.NewProgram(model, tea.WithAltScreen())
 	model.SetProgram(p)
 
-	// Start background sync goroutine
-	go backgroundSync(cfg, apiClient, p)
+	// Start initial sync + background watcher in goroutine
+	go func() {
+		// Signal sync starting
+		p.Send(ui.SendSyncStart())
+
+		// Pull from server first to get any remote changes
+		resp, err := apiClient.Pull()
+		if err != nil {
+			p.Send(ui.SendSyncError(err))
+		} else if len(resp.Changes) > 0 {
+			// Apply remote changes to local files
+			for _, n := range resp.Changes {
+				fullPath := filepath.Join(cfg.NotesDir, n.Path)
+				dir := filepath.Dir(fullPath)
+				if err := os.MkdirAll(dir, 0755); err != nil {
+					continue
+				}
+				if err := os.WriteFile(fullPath, []byte(n.Content), 0644); err != nil {
+					continue
+				}
+				// Preserve server's modification time
+				if n.UpdatedAt != "" {
+					if modTime, err := time.Parse(time.RFC3339, n.UpdatedAt); err == nil {
+						os.Chtimes(fullPath, modTime, modTime)
+					}
+				}
+			}
+			p.Send(ui.SendSyncSuccess(fmt.Sprintf("%d notes from server", len(resp.Changes))))
+		}
+
+		// Signal sync complete
+		p.Send(ui.SendSyncEnd())
+
+		// Now start watching for file changes
+		backgroundSync(cfg, apiClient, p)
+	}()
 
 	// Run the TUI (blocks until quit)
 	if _, err := p.Run(); err != nil {
@@ -377,6 +391,9 @@ func backgroundSync(cfg *config.Config, apiClient *client.Client, p *tea.Program
 	changes := w.Watch()
 
 	for change := range changes {
+		// Signal sync starting
+		p.Send(ui.SendSyncStart())
+
 		// Process the note with business logic
 		processed := note.ProcessNote(change.Path, change.Content, change.Action)
 
@@ -395,6 +412,9 @@ func backgroundSync(cfg *config.Config, apiClient *client.Client, p *tea.Program
 		} else {
 			p.Send(ui.SendSyncSuccess(change.Path))
 		}
+
+		// Signal sync complete
+		p.Send(ui.SendSyncEnd())
 
 		time.Sleep(100 * time.Millisecond)
 	}

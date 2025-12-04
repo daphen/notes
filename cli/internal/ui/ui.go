@@ -40,6 +40,7 @@ type Model struct {
 	watching     bool
 	lastSync     time.Time
 	loading      bool
+	syncing      bool // Currently syncing with server
 
 	// Config
 	notesDir   string
@@ -92,6 +93,12 @@ func (m *Model) SetProgram(p *tea.Program) {
 	m.program = p
 }
 
+// SetCreateView switches the model to create view mode
+func (m *Model) SetCreateView() {
+	m.currentView = ViewCreate
+	m.create.Reset()
+}
+
 // Custom messages
 
 type notesLoadedMsg struct {
@@ -115,6 +122,9 @@ type syncSuccessMsg struct {
 type syncErrorMsg struct {
 	err error
 }
+
+type syncStartMsg struct{}
+type syncEndMsg struct{}
 
 // Init is called once when the program starts
 func (m Model) Init() tea.Cmd {
@@ -219,11 +229,21 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case syncErrorMsg:
 		m.err = msg.err
+		m.syncing = false
 		m.syncMessages = append(m.syncMessages, fmt.Sprintf("✗ Error: %s", msg.err))
 
+	case syncStartMsg:
+		m.syncing = true
+		return m, tea.Tick(100*time.Millisecond, func(t time.Time) tea.Msg {
+			return tickMsg(t)
+		})
+
+	case syncEndMsg:
+		m.syncing = false
+
 	case tickMsg:
-		// If loading, request faster ticks for spinner animation
-		if m.loading {
+		// If loading or syncing, request faster ticks for spinner animation
+		if m.loading || m.syncing {
 			return m, tea.Tick(100*time.Millisecond, func(t time.Time) tea.Msg {
 				return tickMsg(t)
 			})
@@ -266,11 +286,24 @@ func (m Model) View() string {
 
 	// Footer with sync status
 	b.WriteString("\n")
-	timeSince := time.Since(m.lastSync)
-	syncInfo := fmt.Sprintf("Last sync: %s ago", formatDuration(timeSince))
+
+	// Show syncing spinner or last sync time
+	var syncInfo string
+	if m.syncing {
+		spinner := []string{"⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"}
+		frame := int(time.Now().UnixNano()/100000000) % len(spinner)
+		syncInfo = m.theme.AccentStyle().Render(spinner[frame]+" Syncing...")
+	} else {
+		timeSince := time.Since(m.lastSync)
+		syncInfo = fmt.Sprintf("Last sync: %s ago", formatDuration(timeSince))
+	}
 
 	if m.currentView == ViewBrowse {
-		b.WriteString(m.theme.MutedStyle().Render(syncInfo + " • Ctrl+N: create • Ctrl+Q: quit"))
+		if m.syncing {
+			b.WriteString(syncInfo + m.theme.MutedStyle().Render(" • Ctrl+N: create • Ctrl+Q: quit"))
+		} else {
+			b.WriteString(m.theme.MutedStyle().Render(syncInfo + " • Ctrl+N: create • Ctrl+Q: quit"))
+		}
 	} else if m.currentView == ViewCreate {
 		b.WriteString(m.theme.MutedStyle().Render("Esc to cancel"))
 	}
@@ -296,6 +329,7 @@ func loadNotes(notesDir string) tea.Cmd {
 			}
 			if !info.IsDir() && strings.HasSuffix(path, ".md") {
 				relPath, _ := filepath.Rel(notesDir, path)
+				modTime := info.ModTime()
 
 				// Read file content to extract proper title
 				content, err := os.ReadFile(path)
@@ -307,18 +341,23 @@ func loadNotes(notesDir string) tea.Cmd {
 						title = strings.ToUpper(string(title[0])) + title[1:]
 					}
 					notes = append(notes, NoteItem{
-						Path:  relPath,
-						Title: title,
+						Path:    relPath,
+						Title:   title,
+						Content: "",
+						ModTime: modTime,
 					})
 					return nil
 				}
 
 				// Extract title from markdown content
-				title := note.ExtractTitle(string(content), relPath)
+				contentStr := string(content)
+				title := note.ExtractTitle(contentStr, relPath)
 
 				notes = append(notes, NoteItem{
-					Path:  relPath,
-					Title: title,
+					Path:    relPath,
+					Title:   title,
+					Content: contentStr, // Include full content for searching
+					ModTime: modTime,
 				})
 			}
 			return nil
@@ -401,4 +440,14 @@ func SendSyncError(err error) tea.Msg {
 // SendSyncStatus sends a status update
 func SendSyncStatus(status string) tea.Msg {
 	return syncStatusMsg(status)
+}
+
+// SendSyncStart signals that a sync operation is starting
+func SendSyncStart() tea.Msg {
+	return syncStartMsg{}
+}
+
+// SendSyncEnd signals that a sync operation has completed
+func SendSyncEnd() tea.Msg {
+	return syncEndMsg{}
 }

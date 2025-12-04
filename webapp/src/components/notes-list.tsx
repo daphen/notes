@@ -8,17 +8,10 @@ import {
   useSpring,
   useTransform,
 } from 'motion/react';
-import { Plus, Trash2, Check } from 'lucide-react';
+import { Plus, Trash2, Check, ArrowLeft } from 'lucide-react';
 import { useNotes } from '@/lib/notes-store';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
-import {
-  Drawer,
-  DrawerContent,
-  DrawerHeader,
-  DrawerTitle,
-  DrawerDescription,
-} from '@/components/ui/drawer';
 import type { Note } from '@/lib/db/schema';
 
 interface NoteWithSync extends Note {
@@ -245,59 +238,93 @@ export function NotesList() {
 
   const isNewNote = activeNote ? !notes.some(n => n.id === activeNote.id) : false;
 
+  // Close editor on Escape key
+  useEffect(() => {
+    if (!activeNote) return;
+
+    const handleEscape = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setActiveNote(null);
+      }
+    };
+
+    document.addEventListener('keydown', handleEscape);
+    return () => document.removeEventListener('keydown', handleEscape);
+  }, [activeNote]);
+
   return (
     <>
-      <Drawer open={!!activeNote} onOpenChange={(open) => !open && setActiveNote(null)}>
-        <DrawerContent className="flex h-[90vh] flex-col md:h-[60vh]">
-          <DrawerHeader className="flex flex-row items-center justify-between">
-            <div>
-              <DrawerTitle>{isNewNote ? 'New Note' : 'Edit Note'}</DrawerTitle>
-              <DrawerDescription className="sr-only">
-                {isNewNote ? 'Create a new note' : 'Edit your note'}
-              </DrawerDescription>
-            </div>
-            {!isNewNote && (
-              <Button
-                variant="ghost"
-                size="icon"
-                className="text-destructive hover:text-destructive size-8"
-                onClick={handleDelete}
-              >
-                <Trash2 className="size-4" />
-              </Button>
-            )}
-          </DrawerHeader>
-          <div
-            className="flex flex-1 flex-col gap-3 px-4 pb-4"
-            onKeyDown={(e) => {
-              if (e.key === 'Enter' && e.shiftKey) {
-                e.preventDefault();
-                handleSave();
-              }
-            }}
+      {/* Full-screen editor */}
+      <AnimatePresence>
+        {activeNote && (
+          <motion.div
+            initial={{ opacity: 0, y: '100%' }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: '100%' }}
+            transition={{ duration: 0.3, ease: [0.32, 0.72, 0, 1] }}
+            className="fixed inset-0 z-50 flex flex-col bg-background"
           >
-            <input
-              value={editTitle}
-              onChange={(e) => setEditTitle(e.target.value)}
-              className="bg-muted rounded-md px-3 py-3 text-lg font-semibold outline-none"
-              placeholder="Note title..."
-              autoFocus
-            />
-            <Textarea
-              value={editContent}
-              onChange={(e) => setEditContent(e.target.value)}
-              placeholder="Write your note..."
-              className="bg-muted flex-1 resize-none rounded-md font-mono text-base"
-            />
-          </div>
-          <div className="sticky bottom-0 flex items-center justify-end border-t bg-background px-4 py-3">
-            <Button onClick={handleSave}>
-              <Check className="size-4" />
-              Save
-            </Button>
-          </div>
-        </DrawerContent>
-      </Drawer>
+            {/* Header */}
+            <div className="flex items-center justify-between border-b px-4 py-3">
+              <div className="flex items-center gap-3">
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="size-9"
+                  onClick={() => setActiveNote(null)}
+                >
+                  <ArrowLeft className="size-5" />
+                </Button>
+                <span className="font-medium">
+                  {isNewNote ? 'New Note' : 'Edit Note'}
+                </span>
+              </div>
+              <div className="flex items-center gap-2">
+                {!isNewNote && (
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="text-destructive hover:text-destructive size-9"
+                    onClick={handleDelete}
+                  >
+                    <Trash2 className="size-4" />
+                  </Button>
+                )}
+                <Button size="sm" onClick={handleSave}>
+                  <Check className="size-4" />
+                  Save
+                </Button>
+              </div>
+            </div>
+
+            {/* Editor */}
+            <div
+              className="flex flex-1 flex-col gap-3 overflow-auto p-4"
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && e.shiftKey) {
+                  e.preventDefault();
+                  handleSave();
+                }
+              }}
+            >
+              <input
+                value={editTitle}
+                onChange={(e) => setEditTitle(e.target.value)}
+                className="bg-transparent text-xl font-semibold outline-none placeholder:text-muted-foreground"
+                placeholder="Note title..."
+                autoFocus
+              />
+              <Textarea
+                value={editContent}
+                onChange={(e) => setEditContent(e.target.value)}
+                placeholder="Write your note..."
+                className="flex-1 resize-none border-0 bg-transparent p-0 font-mono text-base shadow-none focus-visible:ring-0"
+              />
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       <ul className="relative z-0 m-0 flex w-full flex-col items-center py-4">
         <li
           onClick={createAndOpenNote}

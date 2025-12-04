@@ -90,11 +90,12 @@ func (c *Client) Authenticate() error {
 
 // Note represents a note in the system
 type Note struct {
-	Path     string `json:"path"`
-	Title    string `json:"title"`
-	Content  string `json:"content"`
-	Checksum string `json:"checksum"`
-	Action   string `json:"action"` // "create", "update", "delete"
+	Path      string `json:"path"`
+	Title     string `json:"title"`
+	Content   string `json:"content"`
+	Checksum  string `json:"checksum"`
+	Action    string `json:"action"`    // "create", "update", "delete"
+	UpdatedAt string `json:"updatedAt"` // ISO timestamp from server
 }
 
 // SyncRequest is the payload we send to /api/sync

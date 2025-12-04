@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -30,8 +31,10 @@ type BrowseModel struct {
 
 // NoteItem represents a note in the list
 type NoteItem struct {
-	Path  string
-	Title string
+	Path    string
+	Title   string
+	Content string    // Full content for searching
+	ModTime time.Time // File modification time
 }
 
 // NewBrowseModel creates a new browse model
@@ -58,21 +61,47 @@ func (m *BrowseModel) updateFilter() {
 	m.filteredNotes = m.filteredNotes[:0]
 
 	for _, note := range m.notes {
-		// Create search target from title and path
-		searchTarget := note.Title + " " + note.Path
+		// Search in title, path, AND content
+		titleMatch := search.Match(m.searchQuery, note.Title+" "+note.Path)
+		contentMatch := search.Match(m.searchQuery, note.Content)
 
-		if search.Match(m.searchQuery, searchTarget) {
-			score := search.Score(m.searchQuery, searchTarget)
+		if titleMatch || contentMatch {
+			// Calculate score - prioritize title matches
+			titleScore := search.Score(m.searchQuery, note.Title+" "+note.Path)
+			contentScore := search.Score(m.searchQuery, note.Content)
+
+			// Title matches get bonus
+			score := titleScore
+			if contentScore > titleScore {
+				score = contentScore
+			}
+			if titleMatch {
+				score += 500 // Bonus for title match
+			}
+
+			// Extract snippet if match was in content
+			snippet := ""
+			if !titleMatch && contentMatch && m.searchQuery != "" {
+				snippet = search.ExtractSnippet(m.searchQuery, note.Content, 60)
+			}
+
 			m.filteredNotes = append(m.filteredNotes, search.NoteMatch{
-				Path:  note.Path,
-				Title: note.Title,
-				Score: score,
+				Path:         note.Path,
+				Title:        note.Title,
+				Score:        score,
+				ModTime:      note.ModTime,
+				MatchSnippet: snippet,
+				MatchInTitle: titleMatch,
 			})
 		}
 	}
 
-	// Sort by score
-	sort.Sort(search.ByScore(m.filteredNotes))
+	// Sort by modification time when not searching, by score when searching
+	if m.searchQuery == "" {
+		sort.Sort(search.ByModTime(m.filteredNotes))
+	} else {
+		sort.Sort(search.ByScore(m.filteredNotes))
+	}
 
 	// Reset cursor if out of bounds
 	if m.cursorPosition >= len(m.filteredNotes) {
@@ -173,18 +202,31 @@ func (m BrowseModel) View() string {
 	for i := start; i < end; i++ {
 		note := m.filteredNotes[i]
 
+		// Format modification time
+		timeStr := formatModTime(note.ModTime)
+
 		// Style for selected item
 		var line string
 		if i == m.cursorPosition {
 			cursor := "▶ "
-			line = m.theme.SelectedStyle().Render(cursor + note.Title)
+			title := m.theme.SelectedStyle().Render(cursor + note.Title)
+			timestamp := m.theme.MutedStyle().Render(" " + timeStr)
+			line = title + timestamp
 		} else {
-			line = m.theme.NormalStyle().Render("  " + note.Title)
+			title := m.theme.NormalStyle().Render("  " + note.Title)
+			timestamp := m.theme.MutedStyle().Render(" " + timeStr)
+			line = title + timestamp
 		}
 
-		// Show only the title (path is implementation detail)
 		contentBuilder.WriteString(line)
 		contentBuilder.WriteString("\n")
+
+		// Show snippet if match was in content (not title)
+		if note.MatchSnippet != "" {
+			snippetLine := m.theme.MutedStyle().Render("    " + note.MatchSnippet)
+			contentBuilder.WriteString(snippetLine)
+			contentBuilder.WriteString("\n")
+		}
 	}
 
 	// Empty state
@@ -236,4 +278,34 @@ func (m BrowseModel) GetSelectedNote() *search.NoteMatch {
 		return nil
 	}
 	return &m.filteredNotes[m.cursorPosition]
+}
+
+// formatModTime formats the modification time in a human-friendly way
+func formatModTime(t time.Time) string {
+	now := time.Now()
+	diff := now.Sub(t)
+
+	// Today
+	if t.Year() == now.Year() && t.YearDay() == now.YearDay() {
+		return "Today"
+	}
+
+	// Yesterday
+	yesterday := now.AddDate(0, 0, -1)
+	if t.Year() == yesterday.Year() && t.YearDay() == yesterday.YearDay() {
+		return "Yesterday"
+	}
+
+	// Within the last week: show day name
+	if diff < 7*24*time.Hour {
+		return t.Format("Monday")
+	}
+
+	// This year: show month and day
+	if t.Year() == now.Year() {
+		return t.Format("Jan 2")
+	}
+
+	// Older: show full date
+	return t.Format("2006-01-02")
 }

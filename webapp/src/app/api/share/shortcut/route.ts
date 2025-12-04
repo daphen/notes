@@ -27,6 +27,46 @@ function isBase64Image(text: string): boolean {
   return text.startsWith('data:image/') || /^[A-Za-z0-9+/=]{100,}$/.test(text.slice(0, 200));
 }
 
+// Minimum size for a valid image (10KB) - prevents empty/tiny placeholder images
+const MIN_IMAGE_SIZE = 10 * 1024;
+
+function isInstagramUrl(url: string): boolean {
+  try {
+    const urlObj = new URL(url);
+    return urlObj.hostname === 'instagram.com' || urlObj.hostname === 'www.instagram.com';
+  } catch {
+    return false;
+  }
+}
+
+async function fetchInstagramEmbed(url: string): Promise<{
+  title?: string;
+  description?: string;
+  image?: string;
+}> {
+  try {
+    // Use Instagram's oEmbed API (no auth required for basic info)
+    const oembedUrl = `https://api.instagram.com/oembed?url=${encodeURIComponent(url)}`;
+    const response = await fetch(oembedUrl, {
+      signal: AbortSignal.timeout(5000),
+    });
+
+    if (!response.ok) {
+      return {};
+    }
+
+    const data = await response.json();
+    return {
+      title: data.title || data.author_name,
+      description: data.author_name ? `@${data.author_name} on Instagram` : undefined,
+      image: data.thumbnail_url,
+    };
+  } catch (error) {
+    console.error('Failed to fetch Instagram embed:', error);
+    return {};
+  }
+}
+
 async function fetchOpenGraph(url: string): Promise<{
   title?: string;
   description?: string;
@@ -80,14 +120,17 @@ export async function POST(request: NextRequest) {
     console.log('Image field length:', body.image?.length || 0);
     const { title, text, url, image: imageData } = body;
 
-    // Check if we have image data (base64)
-    if (imageData && isBase64Image(imageData)) {
-      // Extract base64 data
-      let base64Data = imageData;
+    // Determine the actual content/URL first
+    const sharedContent = (text || url || '').trim();
+    const hasUrl = isUrl(sharedContent);
+
+    // Helper to process image data
+    const processImageData = (imgData: string) => {
+      let base64Data = imgData;
       let contentType = 'image/jpeg';
 
-      if (imageData.startsWith('data:')) {
-        const matches = imageData.match(/^data:([^;]+);base64,(.+)$/);
+      if (imgData.startsWith('data:')) {
+        const matches = imgData.match(/^data:([^;]+);base64,(.+)$/);
         if (matches) {
           contentType = matches[1];
           base64Data = matches[2];
@@ -95,40 +138,88 @@ export async function POST(request: NextRequest) {
       }
 
       const buffer = Buffer.from(base64Data, 'base64');
+      return { buffer, contentType };
+    };
 
-      // Detect actual image type from magic bytes
-      const getImageType = (buf: Buffer): { mime: string; ext: string } => {
-        if (buf[0] === 0xff && buf[1] === 0xd8 && buf[2] === 0xff) {
-          return { mime: 'image/jpeg', ext: 'jpg' };
+    // Detect actual image type from magic bytes
+    const getImageType = (buf: Buffer, fallbackContentType: string): { mime: string; ext: string } => {
+      if (buf[0] === 0xff && buf[1] === 0xd8 && buf[2] === 0xff) {
+        return { mime: 'image/jpeg', ext: 'jpg' };
+      }
+      if (buf[0] === 0x89 && buf[1] === 0x50 && buf[2] === 0x4e && buf[3] === 0x47) {
+        return { mime: 'image/png', ext: 'png' };
+      }
+      if (buf[0] === 0x47 && buf[1] === 0x49 && buf[2] === 0x46) {
+        return { mime: 'image/gif', ext: 'gif' };
+      }
+      if (buf[0] === 0x52 && buf[1] === 0x49 && buf[2] === 0x46 && buf[3] === 0x46) {
+        return { mime: 'image/webp', ext: 'webp' };
+      }
+      // HEIC/HEIF detection (ftyp box at offset 4)
+      if (buf.length > 12 && buf.slice(4, 8).toString() === 'ftyp') {
+        const brand = buf.slice(8, 12).toString();
+        if (['heic', 'heix', 'hevc', 'hevx', 'mif1'].includes(brand)) {
+          return { mime: 'image/heic', ext: 'heic' };
         }
-        if (buf[0] === 0x89 && buf[1] === 0x50 && buf[2] === 0x4e && buf[3] === 0x47) {
-          return { mime: 'image/png', ext: 'png' };
-        }
-        if (buf[0] === 0x47 && buf[1] === 0x49 && buf[2] === 0x46) {
-          return { mime: 'image/gif', ext: 'gif' };
-        }
-        if (buf[0] === 0x52 && buf[1] === 0x49 && buf[2] === 0x46 && buf[3] === 0x46) {
-          return { mime: 'image/webp', ext: 'webp' };
-        }
-        // HEIC/HEIF detection (ftyp box at offset 4)
-        if (buf.length > 12 && buf.slice(4, 8).toString() === 'ftyp') {
-          const brand = buf.slice(8, 12).toString();
-          if (['heic', 'heix', 'hevc', 'hevx', 'mif1'].includes(brand)) {
-            return { mime: 'image/heic', ext: 'heic' };
-          }
-        }
-        console.log('Unknown image format, first 16 bytes:', buf.slice(0, 16));
-        return { mime: contentType, ext: contentType.split('/')[1] || 'jpg' };
-      };
+      }
+      console.log('Unknown image format, first 16 bytes:', buf.slice(0, 16));
+      return { mime: fallbackContentType, ext: fallbackContentType.split('/')[1] || 'jpg' };
+    };
 
-      const imageType = getImageType(buffer);
-      console.log('Detected image type:', imageType, 'Buffer size:', buffer.length);
+    // Check if we have substantial image data (and no URL, or URL + large image)
+    let hasSubstantialImage = false;
+    let imageBuffer: Buffer | null = null;
+    let imageContentType = 'image/jpeg';
+
+    if (imageData && isBase64Image(imageData)) {
+      const { buffer, contentType } = processImageData(imageData);
+      imageBuffer = buffer;
+      imageContentType = contentType;
+      hasSubstantialImage = buffer.length >= MIN_IMAGE_SIZE;
+      console.log('Image buffer size:', buffer.length, 'Min required:', MIN_IMAGE_SIZE, 'Is substantial:', hasSubstantialImage);
+    }
+
+    // PRIORITY 1: If there's a URL, save as link (even if there's a small image attached)
+    // Only save as image if there's NO URL and we have substantial image data
+    if (hasUrl) {
+      // Save as a link with OpenGraph metadata
+      let og: { title?: string; description?: string; image?: string; favicon?: string };
+
+      // Use Instagram oEmbed for Instagram URLs
+      if (isInstagramUrl(sharedContent)) {
+        const igData = await fetchInstagramEmbed(sharedContent);
+        og = {
+          ...igData,
+          favicon: `https://www.google.com/s2/favicons?domain=instagram.com&sz=64`,
+        };
+      } else {
+        og = await fetchOpenGraph(sharedContent);
+      }
+
+      const [link] = await db
+        .insert(links)
+        .values({
+          url: sharedContent,
+          title: og.title || title || new URL(sharedContent).hostname,
+          description: og.description,
+          image: og.image,
+          favicon: og.favicon,
+        })
+        .returning();
+
+      return NextResponse.json({ success: true, type: 'link', id: link.id });
+    }
+
+    // PRIORITY 2: If we have substantial image data (and no URL), save as image
+    if (hasSubstantialImage && imageBuffer) {
+      const imageType = getImageType(imageBuffer, imageContentType);
+      console.log('Detected image type:', imageType, 'Buffer size:', imageBuffer.length);
 
       const id = crypto.randomUUID();
       const extension = imageType.ext;
 
       // Upload to Vercel Blob
-      const blob = await put(`images/${id}.${extension}`, buffer, {
+      const blob = await put(`images/${id}.${extension}`, imageBuffer, {
         access: 'public',
         contentType: imageType.mime,
       });
@@ -144,28 +235,6 @@ export async function POST(request: NextRequest) {
         .returning();
 
       return NextResponse.json({ success: true, type: 'image', id: img.id });
-    }
-
-    // Determine the actual content/URL
-    const sharedContent = (text || url || '').trim();
-
-    // Check if it's a URL
-    if (isUrl(sharedContent)) {
-      // Save as a link with OpenGraph metadata
-      const og = await fetchOpenGraph(sharedContent);
-
-      const [link] = await db
-        .insert(links)
-        .values({
-          url: sharedContent,
-          title: og.title || title || new URL(sharedContent).hostname,
-          description: og.description,
-          image: og.image,
-          favicon: og.favicon,
-        })
-        .returning();
-
-      return NextResponse.json({ success: true, type: 'link', id: link.id });
     }
 
     // Save as a note
