@@ -124,7 +124,7 @@ function SwipeableNoteItem({
   return (
     <motion.li
       layoutId={`card-${note.id}`}
-      className="relative flex w-[386px] cursor-pointer items-center gap-4 overflow-hidden p-0 bg-background"
+      className="relative flex w-full cursor-pointer items-center gap-4 overflow-hidden p-0 bg-background"
       style={{ borderRadius: 8, touchAction: 'pan-y' }}
       layout
       exit={{ opacity: 0, scale: 0.95 }}
@@ -503,10 +503,10 @@ export function NotesList() {
         )}
       </AnimatePresence>
 
-      <ul className="relative z-0 m-0 flex w-full flex-col items-center py-4">
+      <ul className="relative z-0 m-0 flex w-full flex-col px-4 py-4">
         <li
           onClick={createAndOpenNote}
-          className="flex w-[386px] cursor-pointer items-center gap-4 p-0 py-2"
+          className="flex w-full cursor-pointer items-center gap-4 p-0 py-2"
         >
           <div className="bg-muted flex size-10 items-center justify-center rounded-lg">
             <Plus className="text-muted-foreground size-5" />
