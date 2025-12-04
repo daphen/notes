@@ -27,6 +27,7 @@ Thumbs.db
 .vercel/
 
 # Local storage/cache
+storage/
 webapp/storage/
 webapp/.sync-cache
 webapp/sync.conf
