@@ -1,8 +1,8 @@
 import { RefreshButton } from '@/components/refresh-button';
 import { db } from '@/lib/db';
-import { notes, links, images } from '@/lib/db/schema';
+import { notes } from '@/lib/db/schema';
 import { isNull, desc } from 'drizzle-orm';
-import { HomeContent } from '@/components/home-content';
+import { NotesList } from '@/components/notes-list';
 import { NotesProvider } from '@/lib/notes-store';
 import { Terminal } from 'lucide-react';
 import Link from 'next/link';
@@ -10,11 +10,11 @@ import Link from 'next/link';
 export const dynamic = 'force-dynamic';
 
 export default async function HomePage() {
-  const [allNotes, allLinks, allImages] = await Promise.all([
-    db.select().from(notes).where(isNull(notes.deletedAt)).orderBy(desc(notes.updatedAt)),
-    db.select().from(links).where(isNull(links.deletedAt)).orderBy(desc(links.createdAt)),
-    db.select().from(images).where(isNull(images.deletedAt)).orderBy(desc(images.createdAt)),
-  ]);
+  const allNotes = await db
+    .select()
+    .from(notes)
+    .where(isNull(notes.deletedAt))
+    .orderBy(desc(notes.updatedAt));
 
   return (
     <div className="container py-8">
@@ -34,7 +34,7 @@ export default async function HomePage() {
       </header>
 
       <NotesProvider initialNotes={allNotes}>
-        <HomeContent notes={allNotes} links={allLinks} images={allImages} />
+        <NotesList />
       </NotesProvider>
     </div>
   );
