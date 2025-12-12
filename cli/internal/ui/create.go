@@ -1,6 +1,8 @@
 package ui
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -151,7 +153,13 @@ func (m CreateModel) View() string {
 
 	contentDisplay := m.contentInput
 	if contentDisplay == "" {
-		contentDisplay = "(optional - can edit in $EDITOR after)"
+		editor := os.Getenv("EDITOR")
+		if editor == "" {
+			editor = "your editor"
+		} else {
+			editor = filepath.Base(editor) // Get just the binary name
+		}
+		contentDisplay = "(optional - can edit in " + editor + " after)"
 	}
 	if !m.focusTitle {
 		contentDisplay += m.theme.MutedStyle().Render("█")
