@@ -12,7 +12,7 @@ export async function POST(
 
     const [note] = await db
       .update(notes)
-      .set({ deletedAt: null, updatedAt: new Date() })
+      .set({ deletedAt: null })
       .where(eq(notes.id, id))
       .returning();
 
