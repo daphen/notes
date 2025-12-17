@@ -24,6 +24,7 @@ interface NotesContextValue {
   addNote: (title: string, content: string) => NoteWithSync;
   updateNote: (id: string, updates: Partial<Pick<Note, 'title' | 'content'>>) => void;
   deleteNote: (id: string) => void;
+  restoreNote: (note: NoteWithSync) => void;
   syncStatus: SyncStatus;
 }
 
@@ -124,13 +125,10 @@ export function NotesProvider({ children, initialNotes }: NotesProviderProps) {
       try {
         await syncFn();
 
-        // Show success toast based on operation type (skip updates to avoid spam)
+        // Show success toast for creates only (deletes show immediately with undo, updates sync silently)
         if (type === 'create') {
           toast.success('Note created', { description: title });
-        } else if (type === 'delete') {
-          toast.success('Note deleted', { description: title });
         }
-        // Updates sync silently
       } catch (error) {
         console.error('Sync failed:', error);
         toast.error('Sync failed', {
@@ -269,6 +267,35 @@ export function NotesProvider({ children, initialNotes }: NotesProviderProps) {
     [notes, processQueue]
   );
 
+  // Restore a deleted note
+  const restoreNote = useCallback(
+    (note: NoteWithSync) => {
+      // Add note back to state optimistically
+      setNotes((prev) => sortByUpdatedAt([{ ...note, _syncStatus: 'pending' }, ...prev]));
+
+      // Call restore API
+      syncQueueRef.current.set(`restore-${note.id}`, {
+        type: 'update',
+        title: note.title,
+        fn: async () => {
+          const res = await fetch(`/api/notes/${note.id}/restore`, {
+            method: 'POST',
+          });
+
+          if (!res.ok) throw new Error('Failed to restore note');
+
+          setNotes((prev) =>
+            prev.map((n) => (n.id === note.id ? { ...n, _syncStatus: 'synced' } : n))
+          );
+        },
+      });
+
+      processQueue();
+      toast.success('Note restored', { description: note.title });
+    },
+    [processQueue]
+  );
+
   // Delete note with optimistic update
   const deleteNote = useCallback(
     (id: string) => {
@@ -297,8 +324,19 @@ export function NotesProvider({ children, initialNotes }: NotesProviderProps) {
       });
 
       processQueue();
+
+      // Show toast with undo action
+      if (note) {
+        toast.success('Note deleted', {
+          description: noteTitle,
+          action: {
+            label: 'Undo',
+            onClick: () => restoreNote(note),
+          },
+        });
+      }
     },
-    [notes, processQueue]
+    [notes, processQueue, restoreNote]
   );
 
   // Derive overall sync status
@@ -313,7 +351,7 @@ export function NotesProvider({ children, initialNotes }: NotesProviderProps) {
 
   return (
     <NotesContext.Provider
-      value={{ notes, addNote, updateNote, deleteNote, syncStatus }}
+      value={{ notes, addNote, updateNote, deleteNote, restoreNote, syncStatus }}
     >
       {children}
     </NotesContext.Provider>
