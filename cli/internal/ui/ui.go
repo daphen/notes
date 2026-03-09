@@ -19,8 +19,8 @@ type ViewMode int
 
 const (
 	ViewBrowse ViewMode = iota // Browse/search notes
-	ViewCreate                  // Quick note creation
-	ViewSync                    // Sync status (background)
+	ViewCreate                 // Quick note creation
+	ViewSync                   // Sync status (background)
 )
 
 // 🔵 GO CONCEPT: iota
@@ -52,6 +52,11 @@ type Model struct {
 
 	// Error state
 	err error
+
+	// Delete confirmation
+	confirmDelete    bool
+	noteToDelete     *NoteItem
+	noteToDeletePath string
 
 	// Theme
 	theme *theme.Theme
@@ -109,6 +114,10 @@ type noteCreatedMsg struct {
 	path string
 }
 
+type noteDeletedMsg struct {
+	path string
+}
+
 type editorFinishedMsg struct {
 	err error
 }
@@ -153,7 +162,13 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 
 		case "esc":
-			// Always go back to browse
+			// Cancel deletion if confirming
+			if m.confirmDelete {
+				m.confirmDelete = false
+				m.noteToDeletePath = ""
+				return m, nil
+			}
+			// Otherwise go back to browse
 			m.currentView = ViewBrowse
 			return m, nil
 
@@ -162,6 +177,34 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if m.currentView == ViewBrowse {
 				m.currentView = ViewCreate
 				m.create.Reset()
+				return m, nil
+			}
+
+		case "ctrl+d":
+			// Show delete confirmation
+			if m.currentView == ViewBrowse && !m.confirmDelete {
+				selected := m.browse.GetSelectedNote()
+				if selected != nil {
+					m.confirmDelete = true
+					m.noteToDeletePath = selected.Path
+					return m, nil
+				}
+			}
+
+		case "y", "Y":
+			// Confirm deletion
+			if m.confirmDelete {
+				m.confirmDelete = false
+				path := m.noteToDeletePath
+				m.noteToDeletePath = ""
+				return m, deleteNote(m.notesDir, path)
+			}
+
+		case "n", "N":
+			// Cancel deletion
+			if m.confirmDelete {
+				m.confirmDelete = false
+				m.noteToDeletePath = ""
 				return m, nil
 			}
 
@@ -178,17 +221,19 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		}
 
-		// Delegate to current view
-		switch m.currentView {
-		case ViewBrowse:
-			var cmd tea.Cmd
-			m.browse, cmd = m.browse.Update(msg)
-			return m, cmd
+		// Delegate to current view (but not if showing confirmation dialog)
+		if !m.confirmDelete {
+			switch m.currentView {
+			case ViewBrowse:
+				var cmd tea.Cmd
+				m.browse, cmd = m.browse.Update(msg)
+				return m, cmd
 
-		case ViewCreate:
-			var cmd tea.Cmd
-			m.create, cmd = m.create.Update(msg)
-			return m, cmd
+			case ViewCreate:
+				var cmd tea.Cmd
+				m.create, cmd = m.create.Update(msg)
+				return m, cmd
+			}
 		}
 
 	case tea.WindowSizeMsg:
@@ -205,9 +250,13 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.syncMessages = append(m.syncMessages, fmt.Sprintf("✓ Created: %s", msg.path))
 		m.currentView = ViewBrowse
 		return m, tea.Batch(
-			loadNotes(m.notesDir), // Reload list
+			loadNotes(m.notesDir),                            // Reload list
 			openInEditor(m.notesDir, msg.path, m.editorPath), // Open in editor
 		)
+
+	case noteDeletedMsg:
+		m.syncMessages = append(m.syncMessages, fmt.Sprintf("✓ Deleted: %s", msg.path))
+		return m, loadNotes(m.notesDir) // Reload list
 
 	case editorFinishedMsg:
 		if msg.err != nil {
@@ -292,7 +341,7 @@ func (m Model) View() string {
 	if m.syncing {
 		spinner := []string{"⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"}
 		frame := int(time.Now().UnixNano()/100000000) % len(spinner)
-		syncInfo = m.theme.AccentStyle().Render(spinner[frame]+" Syncing...")
+		syncInfo = m.theme.AccentStyle().Render(spinner[frame] + " Syncing...")
 	} else {
 		timeSince := time.Since(m.lastSync)
 		syncInfo = fmt.Sprintf("Last sync: %s ago", formatDuration(timeSince))
@@ -300,12 +349,19 @@ func (m Model) View() string {
 
 	if m.currentView == ViewBrowse {
 		if m.syncing {
-			b.WriteString(syncInfo + m.theme.MutedStyle().Render(" • Ctrl+N: create • Ctrl+Q: quit"))
+			b.WriteString(syncInfo + m.theme.MutedStyle().Render(" • Ctrl+N: create • Ctrl+D: delete • Ctrl+Q: quit"))
 		} else {
-			b.WriteString(m.theme.MutedStyle().Render(syncInfo + " • Ctrl+N: create • Ctrl+Q: quit"))
+			b.WriteString(m.theme.MutedStyle().Render(syncInfo + " • Ctrl+N: create • Ctrl+D: delete • Ctrl+Q: quit"))
 		}
 	} else if m.currentView == ViewCreate {
 		b.WriteString(m.theme.MutedStyle().Render("Esc to cancel"))
+	}
+
+	// Show delete confirmation dialog
+	if m.confirmDelete {
+		b.WriteString("\n\n")
+		confirmMsg := fmt.Sprintf("Delete '%s'? (y/n)", filepath.Base(m.noteToDeletePath))
+		b.WriteString(m.theme.ErrorStyle().Bold(true).Render(confirmMsg))
 	}
 
 	// Show error if any
@@ -393,6 +449,18 @@ func createNote(notesDir, filename, title, content string) tea.Cmd {
 		}
 
 		return noteCreatedMsg{path: filename}
+	}
+}
+
+func deleteNote(notesDir, notePath string) tea.Cmd {
+	return func() tea.Msg {
+		fullPath := filepath.Join(notesDir, notePath)
+
+		if err := os.Remove(fullPath); err != nil {
+			return syncErrorMsg{err: err}
+		}
+
+		return noteDeletedMsg{path: notePath}
 	}
 }
 
