@@ -74,3 +74,12 @@ export function verifyPassword(password: string): boolean {
   }
   return password === correctPassword;
 }
+
+// Bearer-token auth for MCP / CLI clients. Cookie auth covers the browser
+// PWA; API clients send `Authorization: Bearer <AUTH_PASSWORD>` instead.
+export function verifyBearer(authHeader: string | null): boolean {
+  if (!authHeader) return false;
+  const match = authHeader.match(/^Bearer\s+(.+)$/i);
+  if (!match) return false;
+  return verifyPassword(match[1].trim());
+}
