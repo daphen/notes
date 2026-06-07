@@ -45,3 +45,4 @@ sync.conf
 
 # Local notes storage
 storage/
+.env.production.local
