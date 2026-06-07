@@ -6,7 +6,9 @@ const secret = new TextEncoder().encode(
   process.env.JWT_SECRET || 'fallback-secret-change-me',
 );
 
-const PUBLIC_PATHS = ['/login', '/api/auth', '/api/share'];
+// /api/mcp + /api/search authenticate via Bearer token at the route level,
+// so the cookie-redirect middleware must let them through.
+const PUBLIC_PATHS = ['/login', '/api/auth', '/api/share', '/api/mcp', '/api/search'];
 
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
