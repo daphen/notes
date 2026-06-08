@@ -170,6 +170,8 @@ export function NotesProvider({ children, initialNotes }: NotesProviderProps) {
         content,
         path,
         checksum: '',
+        embedding: null,
+        embeddedAt: null,
         createdAt: now,
         updatedAt: now,
         deletedAt: null,

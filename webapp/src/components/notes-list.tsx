@@ -350,6 +350,8 @@ export function NotesList() {
       content: '',
       path: '',
       checksum: '',
+      embedding: null,
+      embeddedAt: null,
       createdAt: new Date(),
       updatedAt: new Date(),
       deletedAt: null,
