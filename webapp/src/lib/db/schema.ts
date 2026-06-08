@@ -8,12 +8,11 @@ import {
   customType,
 } from 'drizzle-orm/pg-core';
 
-// pgvector column. 768-dim to match nomic-embed-text (the Ollama
-// embedding model running on proart). Stored as a JSON-encoded array
-// string, parsed back to number[] on read.
+// pgvector column. 1536-dim to match OpenAI's text-embedding-3-small.
+// Stored as a JSON-encoded array string, parsed back to number[] on read.
 export const vector = customType<{ data: number[]; driverData: string }>({
   dataType() {
-    return 'vector(768)';
+    return 'vector(1536)';
   },
   toDriver(value: number[]) {
     return `[${value.join(',')}]`;

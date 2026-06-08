@@ -1,42 +1,43 @@
-// One-shot script: embed all notes that don't have an embedding yet.
-// Run on proart so it can hit localhost:11434 directly — no Funnel needed.
+// One-shot: embed all notes that don't yet have a 1536-dim vector. Run
+// after the 0003 migration to populate the new column.
 //
 //   cd ~/personal/notes/webapp
 //   set -a; source .env.production.local; set +a
+//   export OPENAI_API_KEY=sk-...
 //   bun run scripts/backfill-embeddings.ts
 //
-// Re-runnable: only touches notes WHERE embedding IS NULL. Failures on
-// individual notes don't abort the loop.
+// Re-runnable: only touches notes WHERE embedding IS NULL.
 
 import { Pool } from '@neondatabase/serverless';
 
-const OLLAMA = process.env.OLLAMA_LOCAL_URL || 'http://localhost:11434';
-const MODEL = 'nomic-embed-text';
-const BATCH_SIZE = 4;
+const MODEL = 'text-embedding-3-small';
+const EMBED_DIM = 1536;
+const BATCH_SIZE = 10;
 
 async function embed(text: string): Promise<number[] | null> {
-  // Newer /api/embed endpoint; older /api/embeddings ignored num_ctx and
-  // capped at 2048 tokens which choked on plans/design-doc notes.
-  // ~1.5K tokens at 4 chars/token; safely under default ctx even for
-  // token-dense content (code, URLs). Long notes lose the tail from the
-  // embedding but are still discoverable via FTS.
-  const input = text.slice(0, 3000).trim();
+  const key = process.env.OPENAI_API_KEY;
+  if (!key) {
+    console.error('OPENAI_API_KEY not set');
+    process.exit(1);
+  }
+  const input = text.slice(0, 30000).trim();
   if (!input) return null;
-  const res = await fetch(`${OLLAMA}/api/embed`, {
+
+  const res = await fetch('https://api.openai.com/v1/embeddings', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      model: MODEL,
-      input,
-      options: { num_ctx: 8192 },
-    }),
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${key}`,
+    },
+    body: JSON.stringify({ model: MODEL, input }),
   });
   if (!res.ok) {
-    console.warn(`  ollama ${res.status}`);
+    console.warn(`  openai ${res.status}`);
     return null;
   }
-  const json = (await res.json()) as { embeddings?: number[][] };
-  return Array.isArray(json.embeddings?.[0]) ? json.embeddings[0] : null;
+  const json = (await res.json()) as { data?: Array<{ embedding?: number[] }> };
+  const vec = json.data?.[0]?.embedding;
+  return Array.isArray(vec) && vec.length === EMBED_DIM ? vec : null;
 }
 
 async function main() {
@@ -47,22 +48,13 @@ async function main() {
   }
   const pool = new Pool({ connectionString: url });
 
-  // Ping Ollama first so we fail fast if it's not running.
-  try {
-    const ping = await fetch(`${OLLAMA}/api/tags`);
-    if (!ping.ok) throw new Error(`${ping.status}`);
-  } catch (e) {
-    console.error(`Ollama not reachable at ${OLLAMA}:`, (e as Error).message);
-    process.exit(1);
-  }
-
   const { rows } = await pool.query<{ id: string; title: string; content: string }>(
     `SELECT id::text, title, content FROM notes
      WHERE embedding IS NULL AND deleted_at IS NULL
      ORDER BY updated_at DESC`,
   );
 
-  console.log(`Found ${rows.length} notes to embed.`);
+  console.log(`Found ${rows.length} notes to embed via OpenAI.`);
 
   let ok = 0, failed = 0;
   for (let i = 0; i < rows.length; i += BATCH_SIZE) {
