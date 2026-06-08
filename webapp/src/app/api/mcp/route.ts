@@ -2,8 +2,10 @@ import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { notes } from '@/lib/db/schema';
 import { verifyBearer } from '@/lib/auth';
-import { sql, eq } from 'drizzle-orm';
+import { eq } from 'drizzle-orm';
 import { createHash } from 'crypto';
+import { embed } from '@/lib/embed';
+import { hybridSearch } from '@/lib/search';
 
 // POST /api/mcp
 // MCP HTTP transport. JSON-RPC 2.0 over plain POST.
@@ -146,9 +148,13 @@ function checksum(s: string): string {
   return createHash('sha256').update(s).digest('hex').slice(0, 16);
 }
 
-// Upsert a note row by path. Returns the path and whether it was created
-// vs updated.
+// Upsert a note row by path. Computes embedding inline so MCP-written
+// notes are semantically searchable right away (rather than waiting for
+// the backfill cron). Embedding failures degrade gracefully — note still
+// saves, FTS still works, backfill picks up null embeddings later.
 async function upsertNote(path: string, title: string, content: string) {
+  const embedding = await embed(`${title}\n\n${content}`);
+
   const result = await db
     .insert(notes)
     .values({
@@ -156,6 +162,8 @@ async function upsertNote(path: string, title: string, content: string) {
       content,
       path,
       checksum: checksum(content),
+      embedding: embedding ?? undefined,
+      embeddedAt: embedding ? new Date() : undefined,
     })
     .onConflictDoUpdate({
       target: notes.path,
@@ -165,13 +173,14 @@ async function upsertNote(path: string, title: string, content: string) {
         checksum: checksum(content),
         deletedAt: null,
         updatedAt: new Date(),
+        ...(embedding ? { embedding, embeddedAt: new Date() } : {}),
       },
     })
     .returning({ id: notes.id, createdAt: notes.createdAt, updatedAt: notes.updatedAt });
 
   const row = result[0];
   const created = row.createdAt.getTime() === row.updatedAt.getTime();
-  return { path, created };
+  return { path, created, embedded: embedding !== null };
 }
 
 async function saveMemory(args: Record<string, unknown>) {
@@ -316,43 +325,27 @@ async function searchNotes(args: Record<string, unknown>) {
     return { content: [{ type: 'text', text: 'Error: query is required.' }], isError: true };
   }
 
-  const result = await db.execute(sql`
-    SELECT
-      path,
-      title,
-      ts_rank_cd(search_text, q) AS rank,
-      ts_headline(
-        'english',
-        content,
-        q,
-        'MaxFragments=2, MaxWords=20, MinWords=5, ShortWord=3, HighlightAll=FALSE'
-      ) AS snippet,
-      updated_at
-    FROM notes, plainto_tsquery('english', ${query}) AS q
-    WHERE search_text @@ q
-      AND deleted_at IS NULL
-    ORDER BY rank DESC
-    LIMIT ${limit}
-  `);
+  const { hits, mode } = await hybridSearch(query, limit);
 
-  const rows = result.rows as Array<Record<string, unknown>>;
-
-  if (rows.length === 0) {
+  if (hits.length === 0) {
     return {
       content: [{ type: 'text', text: `No notes match "${query}".` }],
     };
   }
 
-  const lines = rows.map((row, i) => {
-    const date = row.updated_at ? new Date(row.updated_at as string).toISOString().slice(0, 10) : '';
-    return `${i + 1}. ${row.title} — ${row.path} (${date})\n   ${row.snippet}`;
+  const modeNote = mode === 'fts-only'
+    ? ' (FTS only — semantic embedder unreachable)'
+    : '';
+  const lines = hits.map((hit, i) => {
+    const date = hit.updatedAt ? new Date(hit.updatedAt).toISOString().slice(0, 10) : '';
+    return `${i + 1}. ${hit.title} — ${hit.path} (${date})\n   ${hit.snippet}`;
   });
 
   return {
     content: [
       {
         type: 'text',
-        text: `Found ${rows.length} match(es) for "${query}":\n\n${lines.join('\n\n')}`,
+        text: `Found ${hits.length} match(es) for "${query}"${modeNote}:\n\n${lines.join('\n\n')}`,
       },
     ],
   };

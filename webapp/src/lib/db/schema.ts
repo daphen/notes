@@ -5,7 +5,23 @@ import {
   uuid,
   serial,
   index,
+  customType,
 } from 'drizzle-orm/pg-core';
+
+// pgvector column. 768-dim to match nomic-embed-text (the Ollama
+// embedding model running on proart). Stored as a JSON-encoded array
+// string, parsed back to number[] on read.
+export const vector = customType<{ data: number[]; driverData: string }>({
+  dataType() {
+    return 'vector(768)';
+  },
+  toDriver(value: number[]) {
+    return `[${value.join(',')}]`;
+  },
+  fromDriver(value: string) {
+    return JSON.parse(value) as number[];
+  },
+});
 
 export const notes = pgTable(
   'notes',
@@ -15,6 +31,8 @@ export const notes = pgTable(
     content: text('content').notNull().default(''),
     path: text('path').notNull().unique(),
     checksum: text('checksum').notNull(),
+    embedding: vector('embedding'),
+    embeddedAt: timestamp('embedded_at'),
     createdAt: timestamp('created_at').defaultNow().notNull(),
     updatedAt: timestamp('updated_at').defaultNow().notNull(),
     deletedAt: timestamp('deleted_at'),

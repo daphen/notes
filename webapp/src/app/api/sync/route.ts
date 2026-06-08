@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { notes, syncLog } from '@/lib/db/schema';
 import { eq, gt, isNull } from 'drizzle-orm';
+import { embed } from '@/lib/embed';
 
 // GET: Pull changes since timestamp
 export async function GET(request: NextRequest) {
@@ -76,7 +77,11 @@ export async function POST(request: NextRequest) {
             .where(eq(notes.path, path));
           console.log(`[SYNC] Delete result:`, result);
         } else {
-          // Use onConflictDoUpdate which should work with Neon HTTP
+          // Compute embedding from title + content. Embed returns null
+          // when Ollama is unreachable — we still persist the note so
+          // FTS works; the backfill script picks up null-embedding rows.
+          const embedding = await embed(`${title || ''}\n\n${content || ''}`);
+
           const result = await db
             .insert(notes)
             .values({
@@ -84,6 +89,8 @@ export async function POST(request: NextRequest) {
               content: content || '',
               path,
               checksum: checksum || '',
+              embedding: embedding ?? undefined,
+              embeddedAt: embedding ? new Date() : undefined,
             })
             .onConflictDoUpdate({
               target: notes.path,
@@ -93,6 +100,7 @@ export async function POST(request: NextRequest) {
                 checksum: checksum || '',
                 deletedAt: null, // Clear deleted flag on upsert!
                 updatedAt: new Date(),
+                ...(embedding ? { embedding, embeddedAt: new Date() } : {}),
               },
             })
             .returning();
