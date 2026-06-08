@@ -12,20 +12,25 @@ export async function embed(text: string): Promise<number[] | null> {
   const url = process.env.OLLAMA_URL;
   if (!url) return null;
 
-  // Ollama charges for tokens at the boundary; trim aggressively. nomic
-  // supports 8192 tokens (~32KB), but we don't need full notes — title +
-  // first paragraph captures the gist for retrieval purposes.
-  const input = text.slice(0, 8000).trim();
+  // ~750 tokens at 4 chars/token; safe even for token-dense content
+  // (code, URLs). The truncated tail is still FTS-searchable.
+  const input = text.slice(0, 3000).trim();
   if (input.length === 0) return null;
 
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), TIMEOUT_MS);
 
   try {
-    const res = await fetch(`${url.replace(/\/$/, '')}/api/embeddings`, {
+    const res = await fetch(`${url.replace(/\/$/, '')}/api/embed`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ model: EMBED_MODEL, prompt: input }),
+      body: JSON.stringify({
+        model: EMBED_MODEL,
+        input,
+        // nomic-embed-text supports 8192 tokens; default ctx is 2048 which
+        // truncates long notes silently. Override so plans/design docs fit.
+        options: { num_ctx: 8192 },
+      }),
       signal: controller.signal,
     });
     clearTimeout(timeout);
@@ -33,12 +38,13 @@ export async function embed(text: string): Promise<number[] | null> {
       console.warn(`[embed] Ollama returned ${res.status}`);
       return null;
     }
-    const json = (await res.json()) as { embedding?: number[] };
-    if (!Array.isArray(json.embedding) || json.embedding.length !== 768) {
+    const json = (await res.json()) as { embeddings?: number[][] };
+    const vec = json.embeddings?.[0];
+    if (!Array.isArray(vec) || vec.length !== 768) {
       console.warn('[embed] unexpected response shape', json);
       return null;
     }
-    return json.embedding;
+    return vec;
   } catch (e) {
     clearTimeout(timeout);
     console.warn('[embed] failed:', (e as Error).message);

@@ -12,22 +12,31 @@ import { Pool } from '@neondatabase/serverless';
 
 const OLLAMA = process.env.OLLAMA_LOCAL_URL || 'http://localhost:11434';
 const MODEL = 'nomic-embed-text';
-const BATCH_SIZE = 50;
+const BATCH_SIZE = 4;
 
 async function embed(text: string): Promise<number[] | null> {
-  const input = text.slice(0, 8000).trim();
+  // Newer /api/embed endpoint; older /api/embeddings ignored num_ctx and
+  // capped at 2048 tokens which choked on plans/design-doc notes.
+  // ~1.5K tokens at 4 chars/token; safely under default ctx even for
+  // token-dense content (code, URLs). Long notes lose the tail from the
+  // embedding but are still discoverable via FTS.
+  const input = text.slice(0, 3000).trim();
   if (!input) return null;
-  const res = await fetch(`${OLLAMA}/api/embeddings`, {
+  const res = await fetch(`${OLLAMA}/api/embed`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ model: MODEL, prompt: input }),
+    body: JSON.stringify({
+      model: MODEL,
+      input,
+      options: { num_ctx: 8192 },
+    }),
   });
   if (!res.ok) {
     console.warn(`  ollama ${res.status}`);
     return null;
   }
-  const json = (await res.json()) as { embedding?: number[] };
-  return Array.isArray(json.embedding) ? json.embedding : null;
+  const json = (await res.json()) as { embeddings?: number[][] };
+  return Array.isArray(json.embeddings?.[0]) ? json.embeddings[0] : null;
 }
 
 async function main() {
