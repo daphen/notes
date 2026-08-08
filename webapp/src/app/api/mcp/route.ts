@@ -28,13 +28,13 @@ const TOOLS = [
   {
     name: 'search_notes',
     description:
-      'Full-text search across the personal notes vault. Returns top matches with title, path, snippet, and rank. Use this when you need to recall something the user wrote about — plans, meeting notes, ideas, todos, or saved memories.',
+      'Hybrid semantic + full-text search across the personal notes vault: every note is embedded on save (OpenAI text-embedding-3-small), and this fuses vector cosine similarity with Postgres FTS via reciprocal-rank fusion — so it recalls conceptually-related notes even when they share no keywords, falling back to FTS-only if embeddings are unavailable. Returns top matches with title, path, snippet, and rank. Use it to recall anything the user wrote about — plans, meeting notes, ideas, todos, or saved memories.',
     inputSchema: {
       type: 'object',
       properties: {
         query: {
           type: 'string',
-          description: 'Natural-language search terms. Stemming applied; stop-words ignored.',
+          description: 'Natural-language search terms — phrase it by meaning, not just keywords (semantic recall handles paraphrase).',
         },
         limit: {
           type: 'number',
