@@ -1,6 +1,6 @@
 // Hybrid search: FTS rank + semantic cosine similarity combined via
-// Reciprocal Rank Fusion (RRF). Falls back to FTS-only when Ollama is
-// unreachable (embed() returns null).
+// Reciprocal Rank Fusion (RRF). Falls back to FTS-only when embedding
+// is unavailable (embed() returns null).
 //
 // RRF formula: score(d) = Σ 1 / (k + rank_i(d))
 // where rank_i is the rank of doc d under ranker i (FTS or vector).
@@ -29,19 +29,16 @@ export async function hybridSearch(
   // can find overlaps. 3× is a reasonable default.
   const pool = limit * 3;
 
-  const queryVec = await embed(query);
+  const [queryVec, fts] = await Promise.all([
+    embed(query),
+    ftsRankList(query, pool),
+  ]);
 
   if (!queryVec) {
-    // FTS-only path: Ollama unreachable, just return text matches.
-    const fts = await ftsSearch(query, limit);
-    return { hits: fts, mode: 'fts-only' };
+    return { hits: fts.slice(0, limit), mode: 'fts-only' };
   }
 
-  // Hybrid path: run FTS and vector queries, fuse via RRF.
-  const [fts, semantic] = await Promise.all([
-    ftsRankList(query, pool),
-    vectorRankList(queryVec, pool),
-  ]);
+  const semantic = await vectorRankList(queryVec, pool);
 
   const fused = new Map<string, { hit: SearchHit; score: number }>();
 
@@ -65,38 +62,6 @@ export async function hybridSearch(
     .map(({ hit, score }) => ({ ...hit, score }));
 
   return { hits: ranked, mode: 'hybrid' };
-}
-
-// FTS path that returns hits with snippets (for FTS-only fallback).
-async function ftsSearch(query: string, limit: number): Promise<SearchHit[]> {
-  const result = await db.execute(sql`
-    SELECT
-      id::text AS id,
-      path,
-      title,
-      ts_rank_cd(search_text, q) AS rank,
-      ts_headline(
-        'english',
-        content,
-        q,
-        'MaxFragments=2, MaxWords=20, MinWords=5, ShortWord=3, HighlightAll=FALSE'
-      ) AS snippet,
-      updated_at
-    FROM notes, plainto_tsquery('english', ${query}) AS q
-    WHERE search_text @@ q
-      AND deleted_at IS NULL
-    ORDER BY rank DESC
-    LIMIT ${limit}
-  `);
-
-  return (result.rows as Array<Record<string, unknown>>).map((row) => ({
-    id: row.id as string,
-    path: row.path as string,
-    title: row.title as string,
-    snippet: row.snippet as string,
-    score: Number(row.rank),
-    updatedAt: String(row.updated_at),
-  }));
 }
 
 // FTS ranked-list (no snippet — used inside the hybrid path; snippets
